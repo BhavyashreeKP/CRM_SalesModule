@@ -15,28 +15,28 @@ export function Sidebar() {
   const { pathname } = useLocation()
 
   const menuItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/customers', label: 'Customers', icon: Users },
-    { href: '/leads', label: 'Leads', icon: Zap },
-    { href: '/inventory', label: 'Inventory', icon: Package },
-    { href: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
-    { href: '/dc-tracking', label: 'DC Tracking', icon: Truck },
-    { href: '/bill-sale', label: 'Bill / Sale', icon: FileText },
+    { href: '/sales/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/sales/customers', label: 'Customers', icon: Users },
+    { href: '/sales/leads', label: 'Leads', icon: Zap },
+    { href: '/sales/inventory', label: 'Inventory', icon: Package },
+    { href: '/sales/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
+    { href: '/sales/dc-tracking', label: 'DC Tracking', icon: Truck },
+    { href: '/sales/bill-sale', label: 'Bill / Sale', icon: FileText },
   ]
 
   return (
     <div className="w-56 bg-[#F0EEE7] border-r border-[#E7E3DA] flex flex-col h-screen fixed left-0 top-0">
       {/* Logo Section */}
       <div className="p-6 border-b border-[#E7E3DA]">
-        <div className="flex items-center gap-3">
+        <Link to="/" className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center">
             <span className="text-white font-bold text-sm">3V</span>
           </div>
           <div>
             <div className="font-serif font-bold text-gray-900">3Vikram</div>
-            <div className="text-xs text-gray-500 uppercase tracking-wider">Technologies</div>
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Sales · Technologies</div>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Navigation */}
