@@ -2,7 +2,6 @@
 
 import { StatCard } from '@/components/stat-card'
 import { Activity, Zap, FileText, Package } from 'lucide-react'
-import Link from 'next/link'
 
 const recentActivity = [
   {
@@ -107,28 +106,31 @@ export default function DashboardPage() {
           label="Active Rentals"
           value="86"
           description="PCs currently deployed at client sites"
-          iconColor="text-gray-700"
+          iconBg="bg-emerald-100"
+          iconColor="text-emerald-700"
         />
         <StatCard
           icon={Zap}
           label="Open Leads"
           value="5"
           description="Deals still in New or In Progress"
-          iconColor="text-yellow-600"
+          iconBg="bg-amber-100"
+          iconColor="text-amber-700"
         />
         <StatCard
           icon={FileText}
           label="Pending DCs"
           value="4"
           description="1 overdue · needs a nudge"
-          iconColor="text-red-500"
+          iconBg="bg-rose-100"
+          iconColor="text-rose-600"
         />
       </div>
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-3 gap-6">
         {/* Recent Activity */}
-        <div className="col-span-2 bg-white rounded-lg border border-gray-200 p-6">
+        <div className="col-span-2 bg-white rounded-lg border border-[#EFECE5] p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-serif font-bold text-gray-900">
               Recent activity
@@ -157,9 +159,9 @@ export default function DashboardPage() {
         {/* Right Column */}
         <div className="space-y-6">
           {/* Leads to Follow Up */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="bg-white rounded-lg border border-[#EFECE5] p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
-              <Zap className="w-5 h-5 text-gray-600" />
+              <Zap className="w-5 h-5 text-amber-600" />
               <h3 className="text-lg font-serif font-bold text-gray-900">
                 Leads to follow up
               </h3>
@@ -176,9 +178,9 @@ export default function DashboardPage() {
           </div>
 
           {/* DCs Needing Attention */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="bg-white rounded-lg border border-[#EFECE5] p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
-              <Activity className="w-5 h-5 text-gray-600" />
+              <Activity className="w-5 h-5 text-rose-600" />
               <h3 className="text-lg font-serif font-bold text-gray-900">
                 DCs needing attention
               </h3>

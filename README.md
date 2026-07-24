@@ -1,6 +1,6 @@
 # 3Vikram Technologies
 
-A CRM application built with **Next.js 16**, **React 19**, **TypeScript**, and **Tailwind CSS 4**.
+A CRM application built with **React 19**, **Vite**, **TypeScript**, **React Router**, and **Tailwind CSS 4**.
 
 ## Prerequisites
 
@@ -21,6 +21,8 @@ Install the following on your Windows machine:
    ```
 
 > Tip: If you use [nvm-windows](https://github.com/coreybutler/nvm-windows), switch to a supported Node version first: `nvm use 24`.
+>
+> Note: This project uses [pnpm](https://pnpm.io) `allowBuilds` settings in `pnpm-workspace.yaml` to allow `esbuild` (required by Vite) to run its install script. If you hit an `ERR_PNPM_IGNORED_BUILDS` warning, run `pnpm approve-builds` and approve `esbuild`.
 
 ## Getting Started
 
@@ -32,15 +34,13 @@ All commands below run in **PowerShell** (or any terminal) from the project fold
 pnpm install
 ```
 
-If pnpm prompts about **ignored build scripts** (e.g. for `sharp`, `msw`), approve them so optional native binaries build correctly:
+If pnpm warns about **ignored build scripts** for `esbuild`, approve it — Vite needs esbuild's native binary:
 
 ```powershell
 pnpm approve-builds
 ```
 
-Use the spacebar to select `sharp` (and `msw` if you'll use it), then press Enter. Re-run `pnpm install` afterward to run the approved build scripts.
-
-> `sharp` is used by Next.js for image optimization. The app still runs without it, but approving it is recommended.
+Select `esbuild`, press Enter, then re-run `pnpm install`.
 
 ### 2. Start the development server
 
@@ -50,7 +50,7 @@ pnpm dev
 
 Open **http://localhost:3000** in your browser. The server stays running in that terminal; press `Ctrl + C` to stop it.
 
-If port 3000 is in use, Next.js automatically picks another port (e.g. 3001) — check the terminal output for the actual URL.
+If port 3000 is in use, Vite automatically picks another port (e.g. 3001) — check the terminal output for the actual URL.
 
 ### 3. Build for production (optional)
 
@@ -63,34 +63,40 @@ pnpm start
 
 | Command | Description |
 |---------|-------------|
-| `pnpm dev` | Start the dev server with hot reload |
-| `pnpm build` | Create an optimized production build |
-| `pnpm start` | Run the production build |
-| `pnpm lint` | Run ESLint |
+| `pnpm dev` | Start the Vite dev server with hot reload |
+| `pnpm build` | Create an optimized production build (outputs to `dist/`) |
+| `pnpm preview` | Preview the production build locally |
+| `pnpm start` | Alias for `pnpm preview` |
 
 ## Project Structure
 
 ```
 crm/
-├── app/                # Next.js app router — pages & layout
-│   ├── customers/      # Customers page (add / edit / view)
-│   ├── dashboard/
-│   ├── inventory/
-│   ├── leads/
-│   ├── bill-sale/
-│   ├── dc-tracking/
-│   └── purchase-orders/
-├── components/         # Reusable UI components (sidebar, modal, cards, etc.)
-├── lib/                # Utilities
-├── public/             # Static assets
-├── package.json
-└── tsconfig.json
+├── index.html          # Vite entry HTML (title, meta, favicons)
+├── vite.config.ts      # Vite config (React plugin, @ alias, dev port)
+├── src/
+│   ├── main.tsx        # React entry point
+│   ├── App.tsx         # Router + layout (sidebar, top bar, routes)
+│   ├── pages/          # One component per route
+│   │   ├── CustomersPage.tsx
+│   │   ├── DashboardPage.tsx
+│   │   ├── LeadsPage.tsx
+│   │   ├── InventoryPage.tsx
+│   │   ├── PurchaseOrdersPage.tsx
+│   │   ├── DCTrackingPage.tsx
+│   │   └── BillSalePage.tsx
+│   ├── components/      # Reusable UI components (sidebar, modal, cards, etc.)
+│   ├── lib/             # Utilities
+│   └── index.css        # Global styles / Tailwind theme tokens
+├── public/             # Static assets (favicons, images)
+└── package.json
 ```
 
 ## Tech Stack
 
-- [Next.js 16](https://nextjs.org) (App Router)
 - [React 19](https://react.dev)
+- [Vite](https://vite.dev) (dev server & build)
+- [React Router](https://reactrouter.com) (client-side routing)
 - [TypeScript](https://www.typescriptlang.org)
 - [Tailwind CSS 4](https://tailwindcss.com)
 - [pnpm](https://pnpm.io) for dependency management

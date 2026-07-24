@@ -1,7 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
   Users,
@@ -13,7 +12,7 @@ import {
 } from 'lucide-react'
 
 export function Sidebar() {
-  const pathname = usePathname()
+  const { pathname } = useLocation()
 
   const menuItems = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -26,9 +25,9 @@ export function Sidebar() {
   ]
 
   return (
-    <div className="w-56 bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0">
+    <div className="w-56 bg-[#F0EEE7] border-r border-[#E7E3DA] flex flex-col h-screen fixed left-0 top-0">
       {/* Logo Section */}
-      <div className="p-6 border-b border-gray-200">
+      <div className="p-6 border-b border-[#E7E3DA]">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center">
             <span className="text-white font-bold text-sm">3V</span>
@@ -54,11 +53,11 @@ export function Sidebar() {
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  to={item.href}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                     isActive
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-black/5'
                   }`}
                 >
                   <Icon className="w-5 h-5" />
@@ -71,7 +70,7 @@ export function Sidebar() {
       </div>
 
       {/* TIP Section */}
-      <div className="p-4 m-3 bg-gray-50 border border-gray-200 rounded-lg">
+      <div className="p-4 m-3 bg-black/[0.02] border border-[#E7E3DA] rounded-lg">
         <div className="text-xs font-semibold text-gray-600 uppercase mb-2 tracking-wider">
           Tip
         </div>

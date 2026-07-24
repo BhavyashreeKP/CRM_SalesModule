@@ -18,7 +18,7 @@ const stageColors = {
   'In Progress': 'bg-yellow-100 text-yellow-700',
   'Qualified': 'bg-green-100 text-green-700',
   'Won': 'bg-green-100 text-green-700',
-  'Lost': 'bg-gray-100 text-gray-700',
+  'Lost': 'bg-[#EFECE5] text-gray-700',
 }
 
 export default function LeadsPage() {
@@ -50,14 +50,14 @@ export default function LeadsPage() {
           placeholder="Find a lead..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#EFECE5] rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]"
         />
       </div>
 
       {/* Kanban Board */}
       <div className="grid grid-cols-5 gap-4">
         {stages.map((stage) => (
-          <div key={stage} className="bg-gray-50 rounded-lg p-4 min-h-96">
+          <div key={stage} className="bg-[#F2EFE8] rounded-lg p-4 min-h-96">
             <h3 className="font-semibold text-gray-900 mb-4 text-sm">{stage}</h3>
             <div className="space-y-3">
               {filteredLeads
@@ -65,7 +65,7 @@ export default function LeadsPage() {
                 .map((lead) => (
                   <div
                     key={lead.id}
-                    className="bg-white rounded-lg p-3 border border-gray-200 hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
+                    className="bg-white rounded-lg p-3 border border-[#EFECE5] shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
                   >
                     <p className="font-semibold text-sm text-gray-900">
                       {lead.company}

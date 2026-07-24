@@ -29,11 +29,11 @@ export function CustomerCard({
   const statusColors = {
     green: 'bg-green-50 text-green-700',
     amber: 'bg-amber-50 text-amber-700',
-    gray: 'bg-gray-100 text-gray-700',
+    gray: 'bg-[#EFECE5] text-gray-700',
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer">
+    <div className="bg-white rounded-lg border border-[#EFECE5] p-6 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-start gap-3">
           <Building2 className="w-6 h-6 text-gray-400 mt-1 flex-shrink-0" />

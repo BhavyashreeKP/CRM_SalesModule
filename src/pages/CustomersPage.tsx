@@ -280,7 +280,7 @@ export default function CustomersPage() {
           placeholder="Find a customer..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#EFECE5] rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]"
         />
         <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">
           Showing {filteredCustomers.length} of {customers.length}
@@ -319,7 +319,7 @@ export default function CustomersPage() {
                 className={`px-2 py-1 rounded text-xs font-semibold ${
                   selectedCustomer.status === 'Active'
                     ? 'bg-green-50 text-green-700'
-                    : 'bg-gray-100 text-gray-700'
+                    : 'bg-[#EFECE5] text-gray-700'
                 }`}
               >
                 {selectedCustomer.status.toUpperCase()}
@@ -341,7 +341,7 @@ export default function CustomersPage() {
               <DetailRow icon={<FileText className="w-4 h-4 text-gray-400" />} label="Notes" value={selectedCustomer.notes || '—'} />
             </div>
 
-            <div className="pt-4 border-t border-gray-200 grid grid-cols-2 gap-2">
+            <div className="pt-4 border-t border-[#EFECE5] grid grid-cols-2 gap-2">
               <button
                 onClick={() => openEditForm(selectedCustomer)}
                 className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
@@ -353,7 +353,7 @@ export default function CustomersPage() {
                 onClick={() => {
                   notify(`Rental initiated for ${selectedCustomer.name}`)
                 }}
-                className="px-4 py-2 bg-gray-100 text-gray-900 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 bg-[#F2EFE8] text-gray-900 rounded-lg font-medium hover:bg-[#E7E3DA] transition-colors"
               >
                 Create Rental
               </button>
@@ -469,7 +469,7 @@ export default function CustomersPage() {
             <button
               type="button"
               onClick={handleCloseForm}
-              className="px-4 py-2 text-gray-700 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+              className="px-4 py-2 text-gray-700 rounded-lg font-medium hover:bg-[#F2EFE8] transition-colors"
             >
               Cancel
             </button>

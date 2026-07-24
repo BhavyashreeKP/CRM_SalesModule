@@ -17,7 +17,7 @@ const statusColors = {
   'Delivered': 'bg-green-100 text-green-700',
   'Received': 'bg-green-100 text-green-700',
   'Overdue': 'bg-red-100 text-red-700',
-  'Cancelled': 'bg-gray-100 text-gray-700',
+  'Cancelled': 'bg-[#EFECE5] text-gray-700',
 }
 
 export default function DCTrackingPage() {
@@ -49,15 +49,15 @@ export default function DCTrackingPage() {
           placeholder="Search by DC ID or customer..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#EFECE5] rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]"
         />
       </div>
 
       {/* DCs Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-[#EFECE5] overflow-hidden shadow-sm">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
+            <tr className="border-b border-[#EFECE5] bg-[#F2EFE8]">
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                 DC ID
               </th>
@@ -80,7 +80,7 @@ export default function DCTrackingPage() {
           </thead>
           <tbody>
             {filteredDCs.map((dc) => (
-              <tr key={dc.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
+              <tr key={dc.id} className="border-b border-[#F2EFE8] hover:bg-[#F2EFE8] cursor-pointer transition-colors">
                 <td className="px-6 py-4 text-sm font-semibold text-gray-900">{dc.id}</td>
                 <td className="px-6 py-4">
                   <div className={`inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-semibold ${dc.type === 'OUT' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>

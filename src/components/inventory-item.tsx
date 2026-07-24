@@ -36,9 +36,9 @@ export function InventoryItem({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div className="bg-white rounded-lg border border-[#EFECE5] p-6 shadow-sm">
       <div className="flex items-start gap-4 mb-4">
-        <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
+        <div className="w-10 h-10 bg-[#F2EFE8] rounded-lg flex items-center justify-center flex-shrink-0">
           <Monitor className="w-6 h-6 text-gray-600" />
         </div>
         <div className="flex-1 min-w-0">
@@ -48,7 +48,7 @@ export function InventoryItem({
             {categories.map((cat) => (
               <span
                 key={cat}
-                className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded"
+                className="px-2 py-1 bg-[#F2EFE8] text-gray-700 text-xs font-medium rounded"
               >
                 {cat}
               </span>
@@ -57,7 +57,7 @@ export function InventoryItem({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-4 pb-4 border-b border-gray-100">
+      <div className="grid grid-cols-3 gap-4 mb-4 pb-4 border-b border-[#F2EFE8]">
         <div>
           <div className="text-2xl font-bold text-gray-900">{available}</div>
           <div className="text-xs text-gray-500 mt-1">of {total} available</div>
@@ -77,7 +77,7 @@ export function InventoryItem({
           <span className="text-gray-600">Utilization</span>
           <span className="text-gray-600">{utilization}% utilised</span>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
+        <div className="w-full bg-[#F2EFE8] rounded-full h-2">
           <div
             className={`h-2 rounded-full ${barColor[status]}`}
             style={{ width: `${utilization}%` }}
