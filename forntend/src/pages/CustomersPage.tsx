@@ -1,538 +1,498 @@
 'use client'
 
-import { useState } from 'react'
-import { CustomerCard } from '@/components/customer-card'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Modal } from '@/components/modal'
 import { Toast } from '@/components/toast'
+import { deleteCustomer, fetchCustomers, type CustomerApiRecord } from '@/lib/customerApi'
 import {
   Search,
+  Plus,
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  Building2,
   Mail,
   Phone,
   MapPin,
-  Plus,
-  Pencil,
-  Building2,
   FileText,
   Hash,
   Calendar,
   Activity,
+  Eye,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 
 interface Customer {
   id: string
-  name: string
-  contact: string
+  companyName: string
+  customerName: string
+  contactName: string
   email: string
   phone: string
-  location: string
-  address: string
-  gst: string
   status: 'Active' | 'Inactive'
-  activeCount: number
-  notes: string
+  accountType: string
+  createdBy: string
   createdAt: string
+  notes: string
+  address: string
+  location: string
+  gst: string
 }
 
-const initialCustomers: Customer[] = [
-  {
-    id: '1',
-    name: 'Nimbus Analytics',
-    contact: 'Ritka Sharma',
-    email: 'ritka@nimbus.io',
-    phone: '+91 98765 43210',
-    location: 'Bengaluru',
-    address: '4th Floor, Koramangala Tech Park, Bengaluru 560034',
-    gst: '29ABCDE1234F1Z5',
-    status: 'Active',
-    activeCount: 24,
-    notes: 'Prefers quarterly billing. Onboarded via referral.',
-    createdAt: '2024-02-14',
-  },
-  {
-    id: '2',
-    name: 'Coral Media Labs',
-    contact: 'Arjun Menon',
-    email: 'arjun@corallabs.com',
-    phone: '+91 90000 12211',
-    location: 'Mumbai',
-    address: '221, Andheri East, Mumbai 400069',
-    gst: '27XYZAB6789G1Z1',
-    status: 'Active',
-    activeCount: 8,
-    notes: '',
-    createdAt: '2024-05-02',
-  },
-  {
-    id: '3',
-    name: 'Fernwood Studios',
-    contact: 'Priya Iyer',
-    email: 'priya@fernwood.co',
-    phone: '+91 99887 66554',
-    location: 'Pune',
-    address: 'Baner Tech Hub, Pune 411045',
-    gst: '27MNPQR1122K1Z9',
-    status: 'Active',
-    activeCount: 12,
-    notes: 'Needs on-site support once a month.',
-    createdAt: '2024-06-18',
-  },
-  {
-    id: '4',
-    name: 'Orbit Consulting',
-    contact: 'Kabir Ahuja',
-    email: 'kabir@orbit.in',
-    phone: '+91 91234 55667',
-    location: 'Gurugram',
-    address: 'Cyber City, Gurugram 122002',
-    gst: '06ORBIT3456L1Z3',
-    status: 'Inactive',
-    activeCount: 0,
-    notes: 'Paused rentals since March.',
-    createdAt: '2023-11-09',
-  },
-  {
-    id: '5',
-    name: 'Saffron Retail Group',
-    contact: 'Deepa Rao',
-    email: 'deepa@saffron.co',
-    phone: '+91 90909 11223',
-    location: 'Hyderabad',
-    address: 'HITEC City, Hyderabad 500081',
-    gst: '36SAFFR7788M1Z7',
-    status: 'Active',
-    activeCount: 36,
-    notes: '',
-    createdAt: '2024-01-22',
-  },
-  {
-    id: '6',
-    name: 'Meridian Fintech',
-    contact: 'Rohan Kapoor',
-    email: 'rohan@meridianfin.com',
-    phone: '+91 98444 77889',
-    location: 'Chennai',
-    address: 'OMR, Chennai 600119',
-    gst: '33MERID9900N1Z2',
-    status: 'Active',
-    activeCount: 6,
-    notes: 'Strict SLA — raise tickets within 2h.',
-    createdAt: '2024-08-05',
-  },
-]
-
-type FormState = Omit<Customer, 'id' | 'activeCount' | 'createdAt'>
-
-const emptyForm: FormState = {
-  name: '',
-  contact: '',
-  email: '',
-  phone: '',
-  location: '',
-  address: '',
-  gst: '',
-  status: 'Active',
-  notes: '',
-}
-
-function statusToColor(status: 'Active' | 'Inactive'): 'green' | 'gray' {
-  return status === 'Active' ? 'green' : 'gray'
-}
+const PAGE_SIZE = 20
+const tableCellClass = 'px-6 py-3 border-r border-[#D1D5DB]'
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers)
+  const navigate = useNavigate()
+  const [customers, setCustomers] = useState<Customer[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [createdByFilter, setCreatedByFilter] = useState('all')
+  const [createdDateFilter, setCreatedDateFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [accountTypeFilter, setAccountTypeFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-
-  // form modal
-  const [formOpen, setFormOpen] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState<FormState>(emptyForm)
-
-  // toast
+  const [isLoading, setIsLoading] = useState(false)
+  const searchTimeoutRef = useRef<number | null>(null)
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('success')
+  const customerCacheRef = useRef<Map<string, { data: Customer[]; totalPages: number; totalCount: number }>>(new Map())
 
-  const notify = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+  const notify = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToastMessage(message)
     setToastType(type)
     setShowToast(true)
-  }
+  }, [])
 
-  const filteredCustomers = customers.filter(
-    (customer) =>
-      customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.contact.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.location.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  const handleCustomerClick = (customer: Customer) => {
-    setSelectedCustomer(customer)
-  }
-
-  const handleCloseModal = () => {
-    setSelectedCustomer(null)
-  }
-
-  const openAddForm = () => {
-    setEditingId(null)
-    setForm(emptyForm)
-    setFormOpen(true)
-  }
-
-  const openEditForm = (customer: Customer) => {
-    setEditingId(customer.id)
-    setForm({
-      name: customer.name,
-      contact: customer.contact,
-      email: customer.email,
-      phone: customer.phone,
-      location: customer.location,
-      address: customer.address,
-      gst: customer.gst,
-      status: customer.status,
-      notes: customer.notes,
-    })
-    setFormOpen(true)
-    setSelectedCustomer(null)
-  }
-
-  const handleCloseForm = () => {
-    setFormOpen(false)
-    setEditingId(null)
-    setForm(emptyForm)
-  }
-
-  const handleFieldChange = (
-    field: keyof FormState,
-    value: string
+  const loadCustomers = useCallback(async (
+    nextPage: number,
+    nextPageSize: number,
+    nextSearch: string,
+    nextCreatedBy: string,
+    nextStatus: string,
+    nextAccountType: string,
+    nextDate: string,
   ) => {
-    setForm((prev) => ({ ...prev, [field]: value }))
-  }
+    const cacheKey = JSON.stringify({
+      search: nextSearch.trim(),
+      page: nextPage,
+      limit: nextPageSize,
+      createdBy: nextCreatedBy,
+      status: nextStatus,
+      accountType: nextAccountType,
+      createdDate: nextDate,
+    })
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.name.trim()) {
-      notify('Customer name is required', 'error')
+    const cachedResponse = customerCacheRef.current.get(cacheKey)
+    if (cachedResponse) {
+      setCustomers(cachedResponse.data)
+      setTotalPages(cachedResponse.totalPages)
+      setTotalCount(cachedResponse.totalCount)
       return
     }
 
-    if (editingId) {
-      setCustomers((prev) =>
-        prev.map((c) =>
-          c.id === editingId
-            ? {
-                ...c,
-                name: form.name,
-                contact: form.contact,
-                email: form.email,
-                phone: form.phone,
-                location: form.location,
-                address: form.address,
-                gst: form.gst,
-                status: form.status,
-                notes: form.notes,
-              }
-            : c
-        )
-      )
-      notify('Customer updated')
-    } else {
-      const newCustomer: Customer = {
-        ...form,
-        id: Date.now().toString(),
-        activeCount: 0,
-        createdAt: new Date().toISOString().slice(0, 10),
+    setIsLoading(true)
+    try {
+      const response = await fetchCustomers({
+        search: nextSearch,
+        page: nextPage,
+        limit: nextPageSize,
+        createdBy: nextCreatedBy,
+        status: nextStatus,
+        accountType: nextAccountType,
+        createdDate: nextDate,
+      })
+      const nextCustomers = (response.data || []).map(mapApiCustomer)
+      const nextPagination = {
+        totalPages: response.pagination?.totalPages || 1,
+        totalCount: response.pagination?.total || 0,
       }
-      setCustomers((prev) => [newCustomer, ...prev])
-      notify('Customer added')
+
+      customerCacheRef.current.set(cacheKey, {
+        data: nextCustomers,
+        totalPages: nextPagination.totalPages,
+        totalCount: nextPagination.totalCount,
+      })
+
+      setCustomers(nextCustomers)
+      setTotalPages(nextPagination.totalPages)
+      setTotalCount(nextPagination.totalCount)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Failed to load customers', 'error')
+    } finally {
+      setIsLoading(false)
     }
-    handleCloseForm()
-  }
+  }, [page, pageSize, searchQuery, createdByFilter, statusFilter, accountTypeFilter, createdDateFilter, notify])
+
+  useEffect(() => {
+    if (searchTimeoutRef.current) window.clearTimeout(searchTimeoutRef.current)
+
+    searchTimeoutRef.current = window.setTimeout(() => {
+      void loadCustomers(page, pageSize, searchQuery, createdByFilter, statusFilter, accountTypeFilter, createdDateFilter)
+    }, 500)
+
+    return () => {
+      if (searchTimeoutRef.current) window.clearTimeout(searchTimeoutRef.current)
+    }
+  }, [page, pageSize, searchQuery, createdByFilter, createdDateFilter, statusFilter, accountTypeFilter, loadCustomers])
+
+  const createdByOptions = useMemo(() => Array.from(new Set(customers.map((customer) => customer.createdBy).filter(Boolean))).sort(), [customers])
+  const accountTypeOptions = useMemo(() => Array.from(new Set(customers.map((customer) => customer.accountType).filter(Boolean))).sort(), [customers])
+  const summaryText = useMemo(() => {
+    if (totalCount === 0) return 'Showing 0 to 0 of 0 entries'
+    return `Showing ${(page - 1) * pageSize + 1} to ${Math.min(page * pageSize, totalCount)} of ${totalCount} entries`
+  }, [page, pageSize, totalCount])
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, createdByFilter, createdDateFilter, statusFilter, accountTypeFilter, pageSize])
+
+  const handleView = useCallback((customer: Customer) => setSelectedCustomer(customer), [])
+  const handleCloseModal = useCallback(() => setSelectedCustomer(null), [])
+
+  const handleAddNew = useCallback(() => navigate('/customers/new'), [navigate])
+  const handleEdit = useCallback((customer: Customer) => navigate(`/customers/edit/${customer.id}`), [navigate])
+
+  const handleDelete = useCallback(async (customer: Customer) => {
+    try {
+      await deleteCustomer(customer.id)
+      setCustomers((prev) => prev.filter((item) => item.id !== customer.id))
+      setSelectedCustomer(null)
+      notify('Customer deleted')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Failed to delete customer', 'error')
+    }
+  }, [notify])
+
+  const handleDownloadReport = useCallback(() => {
+    const rows = customers.map((customer) => [
+      customer.companyName,
+      customer.customerName,
+      customer.email,
+      customer.phone,
+      customer.status,
+      customer.accountType,
+      customer.createdBy,
+      customer.createdAt,
+    ])
+
+    const csv = [
+      ['Customer Name', 'Contact Name', 'Email', 'Phone', 'Status', 'Account Type', 'Created By', 'Created Date'],
+      ...rows,
+    ]
+      .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','))
+      .join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'customer-report.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [customers])
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-4xl font-serif font-bold text-gray-900 mb-2">
-            Customers
+            Customer List
           </h1>
           <p className="text-gray-600">
-            Every account you serve, in one calm view.
+            Manage customer accounts and contacts in one place.
           </p>
         </div>
-        <button
-          onClick={openAddForm}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Customer
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Find a customer..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#EFECE5] rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]"
-        />
-        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">
-          Showing {filteredCustomers.length} of {customers.length}
-        </div>
-      </div>
-
-      {/* Customer Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredCustomers.map((customer) => (
-          <div key={customer.id} onClick={() => handleCustomerClick(customer)}>
-            <CustomerCard
-              {...customer}
-              onStatusColor={statusToColor(customer.status)}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleAddNew}
+            className="flex items-center gap-2 rounded-lg bg-[#2563eb] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#1d4ed8]"
+          >
+            <Plus className="h-4 w-4" />
+            Add New
+          </button>
+          <button
+            onClick={handleDownloadReport}
+            className="flex items-center gap-2 rounded-lg border border-[#EFECE5] bg-[#F2EFE8] px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-[#E7E3DA]"
+          >
+            <Download className="h-4 w-4" />
+            Download Report
+          </button>
+          <div className="relative w-72">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search"
+              className="w-full rounded-lg border border-[#EFECE5] bg-white py-2.5 pl-9 pr-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]"
             />
           </div>
-        ))}
+        </div>
       </div>
 
-      {filteredCustomers.length === 0 && (
-        <div className="text-center py-16 text-gray-500">
-          <Building2 className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-          <p className="text-sm">No customers found. Try a different search or add a new customer.</p>
-        </div>
-      )}
+      <div className="rounded-lg border border-[#EFECE5] bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap gap-3">
+          <label className="min-w-[160px] flex-1">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Created By</span>
+            <select className="w-full rounded-lg border border-[#EFECE5] bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]" value={createdByFilter} onChange={(event) => setCreatedByFilter(event.target.value)}>
+              <option value="all">All</option>
+              {createdByOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </label>
 
-      {/* Customer Detail Modal */}
-      <Modal
-        isOpen={!!selectedCustomer}
-        onClose={handleCloseModal}
-        title={selectedCustomer?.name || ''}
-      >
+          <label className="min-w-[160px] flex-1">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Created Date</span>
+            <select className="w-full rounded-lg border border-[#EFECE5] bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]" value={createdDateFilter} onChange={(event) => setCreatedDateFilter(event.target.value)}>
+              <option value="all">All</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last7days">Last 7 Days</option>
+              <option value="last30days">Last 30 Days</option>
+              <option value="thismonth">This Month</option>
+            </select>
+          </label>
+
+          <label className="min-w-[160px] flex-1">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Status</span>
+            <select className="w-full rounded-lg border border-[#EFECE5] bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </label>
+
+          <label className="min-w-[160px] flex-1">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Account Type</span>
+            <select className="w-full rounded-lg border border-[#EFECE5] bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]" value={accountTypeFilter} onChange={(event) => setAccountTypeFilter(event.target.value)}>
+              <option value="all">All</option>
+              {accountTypeOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-6 overflow-hidden rounded-lg border border-[#EFECE5]">
+          {isLoading ? (
+            <div className="space-y-2 py-8">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="h-12 animate-pulse rounded-md bg-[#F2EFE8]" />
+              ))}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#EFECE5] bg-[#F2EFE8]">
+                    <th className={tableCellClass + ' text-left text-xs font-semibold uppercase tracking-wider text-gray-600'}>Customer ID</th>
+                    <th className={tableCellClass + ' text-left text-xs font-semibold uppercase tracking-wider text-gray-600'}>Created By</th>
+                    <th className={tableCellClass + ' text-left text-xs font-semibold uppercase tracking-wider text-gray-600'}>Customer Name</th>
+                    <th className={tableCellClass + ' text-left text-xs font-semibold uppercase tracking-wider text-gray-600'}>Contact Name</th>
+                    <th className={tableCellClass + ' text-left text-xs font-semibold uppercase tracking-wider text-gray-600'}>Contact Email</th>
+                    <th className={tableCellClass + ' text-left text-xs font-semibold uppercase tracking-wider text-gray-600'}>Contact Number</th>
+                    <th className={tableCellClass + ' text-left text-xs font-semibold uppercase tracking-wider text-gray-600'}>Account Type</th>
+                    <th className={tableCellClass + ' text-left text-xs font-semibold uppercase tracking-wider text-gray-600'}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.length > 0 ? (
+                    customers.map((customer) => (
+                      <CustomerTableRow
+                        key={customer.id}
+                        customer={customer}
+                        onView={handleView}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-16 text-center text-gray-500 border-r border-[#D1D5DB]">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Building2 className="h-8 w-8 text-gray-300" />
+                          <p>No customers found.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#EFECE5] pt-4">
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span>Show</span>
+            <select className="rounded border border-[#EFECE5] bg-white px-2 py-1.5 text-sm text-gray-700" value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+            <span>entries</span>
+          </div>
+          <div className="text-sm text-gray-500">{summaryText}</div>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded border border-[#EFECE5] bg-white p-2 text-gray-600 disabled:opacity-50"
+              disabled={page === 1}
+              onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-sm text-gray-600">Page {page} of {totalPages}</span>
+            <button
+              className="rounded border border-[#EFECE5] bg-white p-2 text-gray-600 disabled:opacity-50"
+              disabled={page === totalPages}
+              onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <Modal isOpen={!!selectedCustomer} onClose={handleCloseModal} title={selectedCustomer?.companyName || ''}>
         {selectedCustomer && (
           <div className="space-y-5">
             <div className="flex items-center justify-between">
-              <span
-                className={`px-2 py-1 rounded text-xs font-semibold ${
-                  selectedCustomer.status === 'Active'
-                    ? 'bg-green-50 text-green-700'
-                    : 'bg-[#EFECE5] text-gray-700'
-                }`}
-              >
-                {selectedCustomer.status.toUpperCase()}
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedCustomer.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                {selectedCustomer.status}
               </span>
-              <span className="text-xs text-gray-500">
-                {selectedCustomer.activeCount} active rentals
-              </span>
+              <span className="text-xs text-slate-400">{selectedCustomer.accountType}</span>
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
-              <DetailRow icon={<Building2 className="w-4 h-4 text-gray-400" />} label="Contact Person" value={selectedCustomer.contact} />
-              <DetailRow icon={<Mail className="w-4 h-4 text-gray-400" />} label="Email" value={selectedCustomer.email} />
-              <DetailRow icon={<Phone className="w-4 h-4 text-gray-400" />} label="Phone" value={selectedCustomer.phone} />
-              <DetailRow icon={<MapPin className="w-4 h-4 text-gray-400" />} label="Location" value={selectedCustomer.location} />
-              <DetailRow icon={<MapPin className="w-4 h-4 text-gray-400" />} label="Address" value={selectedCustomer.address} />
-              <DetailRow icon={<Hash className="w-4 h-4 text-gray-400" />} label="GST" value={selectedCustomer.gst} />
-              <DetailRow icon={<Activity className="w-4 h-4 text-gray-400" />} label="Status" value={selectedCustomer.status} />
-              <DetailRow icon={<Calendar className="w-4 h-4 text-gray-400" />} label="Customer since" value={selectedCustomer.createdAt} />
-              <DetailRow icon={<FileText className="w-4 h-4 text-gray-400" />} label="Notes" value={selectedCustomer.notes || '—'} />
+            <div className="grid gap-3">
+              <DetailRow icon={<Building2 className="h-4 w-4 text-slate-400" />} label="Contact Person" value={selectedCustomer.contactName} />
+              <DetailRow icon={<Mail className="h-4 w-4 text-slate-400" />} label="Email" value={selectedCustomer.email} />
+              <DetailRow icon={<Phone className="h-4 w-4 text-slate-400" />} label="Phone" value={selectedCustomer.phone} />
+              <DetailRow icon={<MapPin className="h-4 w-4 text-slate-400" />} label="Location" value={selectedCustomer.location} />
+              <DetailRow icon={<Hash className="h-4 w-4 text-slate-400" />} label="GST" value={selectedCustomer.gst} />
+              <DetailRow icon={<Activity className="h-4 w-4 text-slate-400" />} label="Status" value={selectedCustomer.status} />
+              <DetailRow icon={<Calendar className="h-4 w-4 text-slate-400" />} label="Created" value={selectedCustomer.createdAt} />
+              <DetailRow icon={<FileText className="h-4 w-4 text-slate-400" />} label="Notes" value={selectedCustomer.notes || '—'} />
             </div>
 
-            <div className="pt-4 border-t border-[#EFECE5] grid grid-cols-2 gap-2">
-              <button
-                onClick={() => openEditForm(selectedCustomer)}
-                className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
-              >
-                <Pencil className="w-4 h-4" />
-                Edit
-              </button>
-              <button
-                onClick={() => {
-                  notify(`Rental initiated for ${selectedCustomer.name}`)
-                }}
-                className="px-4 py-2 bg-[#F2EFE8] text-gray-900 rounded-lg font-medium hover:bg-[#E7E3DA] transition-colors"
-              >
-                Create Rental
+            <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+              <button onClick={() => handleEdit(selectedCustomer)} className="rounded bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#1d4ed8]">
+                Edit Customer
               </button>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Add / Edit Form Modal */}
-      <Modal
-        isOpen={formOpen}
-        onClose={handleCloseForm}
-        title={editingId ? 'Edit Customer' : 'Add Customer'}
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField label="Company Name" required>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => handleFieldChange('name', e.target.value)}
-              placeholder="Acme Corp"
-              className="form-input"
-              autoFocus
-            />
-          </FormField>
-
-          <FormField label="Contact Person">
-            <input
-              type="text"
-              value={form.contact}
-              onChange={(e) => handleFieldChange('contact', e.target.value)}
-              placeholder="Jane Doe"
-              className="form-input"
-            />
-          </FormField>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label="Email">
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => handleFieldChange('email', e.target.value)}
-                placeholder="jane@acme.com"
-                className="form-input"
-              />
-            </FormField>
-            <FormField label="Phone">
-              <input
-                type="text"
-                value={form.phone}
-                onChange={(e) => handleFieldChange('phone', e.target.value)}
-                placeholder="+91 ..."
-                className="form-input"
-              />
-            </FormField>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label="City / Location">
-              <input
-                type="text"
-                value={form.location}
-                onChange={(e) => handleFieldChange('location', e.target.value)}
-                placeholder="Bengaluru"
-                className="form-input"
-              />
-            </FormField>
-            <FormField label="Status">
-              <select
-                value={form.status}
-                onChange={(e) =>
-                  handleFieldChange('status', e.target.value)
-                }
-                className="form-input"
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-            </FormField>
-          </div>
-
-          <FormField label="Address">
-            <input
-              type="text"
-              value={form.address}
-              onChange={(e) => handleFieldChange('address', e.target.value)}
-              placeholder="Full street address"
-              className="form-input"
-            />
-          </FormField>
-
-          <FormField label="GST Number">
-            <input
-              type="text"
-              value={form.gst}
-              onChange={(e) => handleFieldChange('gst', e.target.value)}
-              placeholder="29ABCDE1234F1Z5"
-              className="form-input"
-            />
-          </FormField>
-
-          <FormField label="Notes">
-            <textarea
-              value={form.notes}
-              onChange={(e) => handleFieldChange('notes', e.target.value)}
-              placeholder="Any notes about this customer..."
-              rows={3}
-              className="form-input resize-none"
-            />
-          </FormField>
-
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={handleCloseForm}
-              className="px-4 py-2 text-gray-700 rounded-lg font-medium hover:bg-[#F2EFE8] transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
-            >
-              {editingId ? 'Save Changes' : 'Add Customer'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Toast Notification */}
-      {showToast && (
-        <Toast
-          message={toastMessage}
-          type={toastType}
-          onClose={() => setShowToast(false)}
-        />
-      )}
+      {showToast && <Toast message={toastMessage} type={toastType} onClose={() => setShowToast(false)} />}
     </div>
   )
 }
 
-function DetailRow({
-  icon,
-  label,
-  value,
+function mapApiCustomer(customer: CustomerApiRecord): Customer {
+  const primaryContact = customer.contacts?.[0]
+  return {
+    id: customer._id,
+    companyName: customer.companyName || customer.customerName || 'Untitled Customer',
+    customerName: customer.customerName || customer.companyName || 'Untitled Customer',
+    contactName: primaryContact?.name || customer.customerName || '',
+    email: primaryContact?.email || customer.email || '',
+    phone: primaryContact?.phone || customer.phone || '',
+    status: customer.status || 'Active',
+    accountType: customer.accountType || 'Individual',
+    createdBy: customer.createdBy || 'Admin',
+    createdAt: customer.createdAt ? new Date(customer.createdAt).toISOString().slice(0, 10) : '',
+    notes: customer.notes || '',
+    address: customer.billToAddress?.addressLine1 || '',
+    location: customer.billToAddress?.city || customer.state || '',
+    gst: customer.gstNumber || '',
+  }
+}
+
+function matchesCreatedDate(createdAt: string, filter: string) {
+  if (!createdAt || filter === 'all') return true
+
+  const date = new Date(createdAt)
+  if (Number.isNaN(date.getTime())) return true
+
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(startOfToday)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const last7Days = new Date(startOfToday)
+  last7Days.setDate(last7Days.getDate() - 6)
+  const last30Days = new Date(startOfToday)
+  last30Days.setDate(last30Days.getDate() - 29)
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  switch (filter) {
+    case 'today':
+      return date >= startOfToday
+    case 'yesterday':
+      return date >= yesterday && date < startOfToday
+    case 'last7days':
+      return date >= last7Days
+    case 'last30days':
+      return date >= last30Days
+    case 'thismonth':
+      return date >= startOfMonth
+    default:
+      return true
+  }
+}
+
+const CustomerTableRow = memo(function CustomerTableRow({
+  customer,
+  onView,
+  onEdit,
+  onDelete,
 }: {
-  icon: React.ReactNode
-  label: string
-  value: string
+  customer: Customer
+  onView: (customer: Customer) => void
+  onEdit: (customer: Customer) => void
+  onDelete: (customer: Customer) => void
 }) {
   return (
-    <div className="flex items-start gap-2 text-gray-600">
+    <tr className="border-b border-[#F2EFE8] transition-colors hover:bg-[#F2EFE8]">
+      <td className={`${tableCellClass.replace('py-3','py-4')} text-sm font-semibold text-gray-900`}>{customer.id.slice(-6).toUpperCase()}</td>
+      <td className={`${tableCellClass.replace('py-3','py-4')} text-sm text-gray-700`}>{customer.createdBy || 'Admin'}</td>
+      <td className={`${tableCellClass.replace('py-3','py-4')} text-sm text-gray-700`}>{customer.companyName}</td>
+      <td className={`${tableCellClass.replace('py-3','py-4')} text-sm text-gray-700`}>{customer.contactName}</td>
+      <td className={`${tableCellClass.replace('py-3','py-4')} text-sm text-gray-700`}>{customer.email}</td>
+      <td className={`${tableCellClass.replace('py-3','py-4')} text-sm text-gray-700`}>{customer.phone}</td>
+      <td className={`${tableCellClass.replace('py-3','py-4')} text-sm text-gray-700`}>{customer.accountType}</td>
+      <td className={`${tableCellClass.replace('py-3','py-4')}`}>
+        <div className="flex gap-2">
+          <button onClick={() => onView(customer)} className="rounded border border-[#EFECE5] bg-white p-2 text-gray-600 transition hover:bg-[#F2EFE8]" title="View">
+            <Eye className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={() => onEdit(customer)} className="rounded border border-[#EFECE5] bg-white p-2 text-gray-600 transition hover:bg-[#F2EFE8]" title="Edit">
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={() => onDelete(customer)} className="rounded border border-[#EFECE5] bg-white p-2 text-gray-600 transition hover:bg-[#F2EFE8]" title="Delete">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </td>
+    </tr>
+  )
+})
+
+const DetailRow = memo(function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2 text-slate-600">
       <div className="mt-0.5 flex-shrink-0">{icon}</div>
       <div className="min-w-0">
-        <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider">
-          {label}
-        </p>
-        <p className="text-sm text-gray-900 break-words mt-0.5">{value}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</p>
+        <p className="mt-1 text-sm text-slate-800">{value}</p>
       </div>
     </div>
   )
-}
-
-function FormField({
-  label,
-  required,
-  children,
-}: {
-  label: string
-  required?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <label className="block">
-      <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-        {label}
-        {required && <span className="text-red-500"> *</span>}
-      </span>
-      {children}
-    </label>
-  )
-}
+})

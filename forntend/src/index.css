@@ -157,13 +157,46 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  html, body, #root {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     @apply bg-background text-foreground;
+  }
+
+  button,
+  a,
+  select,
+  summary,
+  [role='button'],
+  [type='button'],
+  [type='submit'],
+  [type='reset'],
+  [data-clickable='true'] {
+    @apply cursor-pointer;
+  }
+
+  input[type='text'],
+  input[type='email'],
+  input[type='number'],
+  input[type='search'],
+  input[type='password'],
+  textarea {
+    cursor: text;
   }
 }
 
 @layer components {
   .form-input {
     @apply w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors;
+  }
+
+  .crm-input {
+    @apply w-full rounded-lg border border-[#EFECE5] bg-white px-3 py-2.5 text-sm text-gray-700 placeholder:text-slate-400 focus:border-[#CEC9BD] focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]/50;
   }
 }

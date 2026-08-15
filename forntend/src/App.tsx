@@ -4,20 +4,38 @@ import { TopBar } from '@/components/top-bar'
 import ModuleSelectPage from '@/pages/ModuleSelectPage'
 import DashboardPage from '@/pages/DashboardPage'
 import CustomersPage from '@/pages/CustomersPage'
+import CustomerFormPage from '@/pages/CustomerFormPage'
+import ContactsPage from '@/pages/ContactsPage'
+import ContactFormPage from '@/pages/ContactFormPage'
+import SuppliersPage from '@/pages/SuppliersPage'
+import SupplierFormPage from '@/pages/SupplierFormPage'
 import LeadsPage from '@/pages/LeadsPage'
+import LeadFormPage from '@/pages/LeadFormPage'
+import LeadDetailsPage from '@/pages/LeadDetailsPage'
+import MailCampaignPage from '@/pages/MailCampaignPage'
+import MailCampaignFormPage from '@/pages/MailCampaignFormPage'
+import CalendarPage from '@/pages/CalendarPage'
 import InventoryPage from '@/pages/InventoryPage'
 import PurchaseOrdersPage from '@/pages/PurchaseOrdersPage'
 import DCTrackingPage from '@/pages/DCTrackingPage'
 import BillSalePage from '@/pages/BillSalePage'
 import PlaceholderPage from '@/pages/PlaceholderPage'
+import QuotationDashboardPage from '@/pages/QuotationDashboardPage'
+import ActivityPage from '@/pages/ActivityPage'
+import ActivityFormPage from '@/pages/ActivityFormPage'
+import CompanyProfilesPage from '@/pages/CompanyProfilesPage'
+import CompanyProfileFormPage from '@/pages/CompanyProfileFormPage'
+import QuotationFormPage from '@/pages/QuotationFormPage'
+import QuotationEditPage from '@/pages/QuotationEditPage'
+import QuotationViewPage from '@/pages/QuotationViewPage'
 
 function SalesLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex">
-      <Sidebar />
-      <div className="flex-1 ml-56">
-        <TopBar />
-        <main className="mt-16 p-8">{children}</main>
+    <div className="h-screen overflow-hidden bg-[#F8F7F3]">
+      <TopBar />
+      <div className="mt-16 flex h-[calc(100vh-4rem)] overflow-hidden">
+        <Sidebar />
+        <main className="min-h-0 flex-1 overflow-y-auto p-8">{children}</main>
       </div>
     </div>
   )
@@ -56,10 +74,130 @@ export default function App() {
           }
         />
         <Route
+          path="/sales/contacts"
+          element={
+            <SalesLayout>
+              <ContactsPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/contacts/new"
+          element={
+            <SalesLayout>
+              <ContactFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/contacts/edit/:id"
+          element={
+            <SalesLayout>
+              <ContactFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/suppliers"
+          element={
+            <SalesLayout>
+              <SuppliersPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/suppliers/new"
+          element={
+            <SalesLayout>
+              <SupplierFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/suppliers/edit/:id"
+          element={
+            <SalesLayout>
+              <SupplierFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/customers"
+          element={
+            <SalesLayout>
+              <Navigate to="/sales/customers" replace />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/customers/new"
+          element={
+            <SalesLayout>
+              <CustomerFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/customers/edit/:id"
+          element={
+            <SalesLayout>
+              <CustomerFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
           path="/sales/leads"
           element={
             <SalesLayout>
               <LeadsPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/leads/new"
+          element={
+            <SalesLayout>
+              <LeadFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/leads/edit/:id"
+          element={
+            <SalesLayout>
+              <LeadFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/leads/:id"
+          element={
+            <SalesLayout>
+              <LeadDetailsPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/mail-campaign"
+          element={
+            <SalesLayout>
+              <MailCampaignPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/mail-campaign/new"
+          element={
+            <SalesLayout>
+              <MailCampaignFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/mail-campaign/edit/:id"
+          element={
+            <SalesLayout>
+              <MailCampaignFormPage />
             </SalesLayout>
           }
         />
@@ -92,6 +230,191 @@ export default function App() {
           element={
             <SalesLayout>
               <BillSalePage />
+            </SalesLayout>
+          }
+        />
+
+        {/* New navigation targets (placeholders) */}
+        <Route
+          path="/sales/calendar"
+          element={
+            <SalesLayout>
+              <CalendarPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/activities"
+          element={
+            <SalesLayout>
+              <ActivityPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/activities/new"
+          element={
+            <SalesLayout>
+              <ActivityFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/activities/edit/:id"
+          element={
+            <SalesLayout>
+              <ActivityFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/funnels"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Funnels" />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/company-profiles"
+          element={
+            <SalesLayout>
+              <CompanyProfilesPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/company-profiles/new"
+          element={
+            <SalesLayout>
+              <CompanyProfileFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/company-profiles/edit/:id"
+          element={
+            <SalesLayout>
+              <CompanyProfileFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/quotations"
+          element={
+            <SalesLayout>
+              <QuotationDashboardPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/quotations/new"
+          element={
+            <SalesLayout>
+              <QuotationFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/quotations/edit/:id"
+          element={
+            <SalesLayout>
+              <QuotationEditPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/quotations/:id"
+          element={
+            <SalesLayout>
+              <QuotationViewPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/reports"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Reports" />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/reports/leads"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Lead Reports" />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/reports/customers"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Customer Reports" />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/reports/quotations"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Quotation Reports" />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/reports/sales"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Sales Reports" />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/reports/mail-campaigns"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Mail Campaign Reports" />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/reports/activities"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Activity Reports" />
+            </SalesLayout>
+          }
+        />
+
+        <Route
+          path="/sales/data-admin"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Data Admin" />
+            </SalesLayout>
+          }
+        />
+        <Route path="/sales/data-admin/import" element={<SalesLayout><PlaceholderPage module="Import Data" /></SalesLayout>} />
+        <Route path="/sales/data-admin/export" element={<SalesLayout><PlaceholderPage module="Export Data" /></SalesLayout>} />
+        <Route path="/sales/data-admin/user-management" element={<SalesLayout><PlaceholderPage module="User Management" /></SalesLayout>} />
+        <Route path="/sales/data-admin/role-management" element={<SalesLayout><PlaceholderPage module="Role Management" /></SalesLayout>} />
+        <Route path="/sales/data-admin/master-data" element={<SalesLayout><PlaceholderPage module="Master Data" /></SalesLayout>} />
+        <Route path="/sales/data-admin/country-master" element={<SalesLayout><PlaceholderPage module="Country Master" /></SalesLayout>} />
+        <Route path="/sales/data-admin/state-master" element={<SalesLayout><PlaceholderPage module="State Master" /></SalesLayout>} />
+        <Route path="/sales/data-admin/city-master" element={<SalesLayout><PlaceholderPage module="City Master" /></SalesLayout>} />
+        <Route path="/sales/data-admin/lead-source-master" element={<SalesLayout><PlaceholderPage module="Lead Source Master" /></SalesLayout>} />
+        <Route path="/sales/data-admin/industry-master" element={<SalesLayout><PlaceholderPage module="Industry Master" /></SalesLayout>} />
+        <Route path="/sales/data-admin/designation-master" element={<SalesLayout><PlaceholderPage module="Designation Master" /></SalesLayout>} />
+        <Route path="/sales/data-admin/email-templates" element={<SalesLayout><PlaceholderPage module="Email Templates" /></SalesLayout>} />
+        <Route path="/sales/data-admin/activity-types" element={<SalesLayout><PlaceholderPage module="Activity Types" /></SalesLayout>} />
+
+        <Route
+          path="/sales/settings"
+          element={
+            <SalesLayout>
+              <PlaceholderPage module="Settings" />
             </SalesLayout>
           }
         />

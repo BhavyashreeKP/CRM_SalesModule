@@ -1,49 +1,56 @@
 'use client'
 
+import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
   Users,
+  Contact,
+  Package2,
   Zap,
+  Mail,
   Package,
+  Activity,
   ShoppingCart,
   Truck,
   FileText,
+  Building2,
 } from 'lucide-react'
 
 export function Sidebar() {
   const { pathname } = useLocation()
+  const [isExpanded, setIsExpanded] = useState(false)
 
   const menuItems = [
     { href: '/sales/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/sales/leads', label: 'Lead Management', icon: Zap },
+    { href: '/sales/mail-campaign', label: 'Mail Campaign', icon: Mail },
+    { href: '/sales/calendar', label: 'Calendar', icon: Package2 },
+    { href: '/sales/activities', label: 'Activities', icon: Activity },
+    { href: '/sales/company-profiles', label: 'Company Profiles', icon: Building2 },
+    { href: '/sales/funnels', label: 'Funnels', icon: Users },
+    { href: '/sales/quotations', label: 'Quotations', icon: FileText },
     { href: '/sales/customers', label: 'Customers', icon: Users },
-    { href: '/sales/leads', label: 'Leads', icon: Zap },
-    { href: '/sales/inventory', label: 'Inventory', icon: Package },
-    { href: '/sales/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
-    { href: '/sales/dc-tracking', label: 'DC Tracking', icon: Truck },
-    { href: '/sales/bill-sale', label: 'Bill / Sale', icon: FileText },
+    { href: '/sales/contacts', label: 'Contacts', icon: Contact },
+    { href: '/sales/suppliers', label: 'Suppliers', icon: Package2 },
+    { href: '/sales/reports', label: 'Reports', icon: LayoutDashboard },
+    { href: '/sales/data-admin', label: 'Data Admin', icon: Package },
+    { href: '/sales/settings', label: 'Settings', icon: Package2 },
   ]
 
   return (
-    <div className="w-56 bg-[#F0EEE7] border-r border-[#E7E3DA] flex flex-col h-screen fixed left-0 top-0">
-      {/* Logo Section */}
-      <div className="p-6 border-b border-[#E7E3DA]">
-        <Link to="/" className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center">
-            <span className="text-white font-bold text-sm">3V</span>
-          </div>
-          <div>
-            <div className="font-serif font-bold text-gray-900">3Vikram</div>
-            <div className="text-xs text-gray-500 uppercase tracking-wider">Sales · Technologies</div>
-          </div>
-        </Link>
-      </div>
-
+    <div
+      className={`flex h-full flex-col overflow-hidden bg-[#1F2937] transition-[width] duration-300 ease-in-out shrink-0 ${
+        isExpanded ? 'w-60' : 'w-[72px]'
+      }`}
+      onMouseEnter={() => setIsExpanded(true)}
+      onMouseLeave={() => setIsExpanded(false)}
+    >
       {/* Navigation */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="px-3 py-6">
-          <div className="text-xs font-semibold text-gray-400 uppercase px-3 mb-4 tracking-wider">
-            Workspace
+      <div className="flex-1 overflow-hidden">
+        <div className="px-2 py-6">
+          <div className={`mb-4 px-3 text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] transition-all duration-300 ${isExpanded ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}`}>
+            SALES
           </div>
           <nav className="space-y-1">
             {menuItems.map((item) => {
@@ -54,14 +61,16 @@ export function Sidebar() {
                 <Link
                   key={item.href}
                   to={item.href}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                  className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 transition-all duration-200 ${
                     isActive
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-black/5'
+                      ? 'bg-[#2563EB] text-white'
+                      : 'text-[#E5E7EB] hover:bg-[#2F5FA8] hover:text-white'
                   }`}
                 >
-                  <Icon className="w-5 h-5" />
-                  <span className="text-sm">{item.label}</span>
+                  <Icon className={`h-5 w-5 shrink-0 ${isActive ? 'text-white' : 'text-[#E5E7EB]'}`} />
+                  <span className={`text-sm transition-all duration-300 ${isExpanded ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0 overflow-hidden'}`}>
+                    {item.label}
+                  </span>
                 </Link>
               )
             })}
@@ -69,15 +78,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* TIP Section */}
-      <div className="p-4 m-3 bg-black/[0.02] border border-[#E7E3DA] rounded-lg">
-        <div className="text-xs font-semibold text-gray-600 uppercase mb-2 tracking-wider">
-          Tip
-        </div>
-        <p className="text-xs text-gray-600 leading-relaxed">
-          New to 3Vikram? Click any card to see full details — no page jumps.
-        </p>
-      </div>
+      
     </div>
   )
 }
