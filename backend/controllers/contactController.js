@@ -1,8 +1,12 @@
 const Contact = require('../models/Contact');
 const Customer = require('../models/Customer');
+const multer = require('multer');
+const XLSX = require('xlsx');
 const { DEFAULT_PAGE_SIZE, parsePagination, normalizeSort, regexFromSearch } = require('../utils/queryUtils');
 
 const normalizePhone = (value = '') => value.replace(/[^\d+]/g, '').trim();
+const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const importEmailPattern = /^\S+@\S+\.\S+$/;
 
 const buildWhatsAppUrl = (number) => {
   const normalized = normalizePhone(number);
@@ -22,6 +26,7 @@ const normalizeContactPayload = (payload = {}) => {
   const customerName = `${source.customerName || ''}`.trim();
   const contactName = `${source.contactName || source.contactPerson || ''}`.trim();
   const designation = `${source.designation || ''}`.trim();
+  const mail = `${source.mail || ''}`.trim();
   const contactNumber = `${source.contactNumber || source.number || ''}`.trim();
   const email = `${source.email || ''}`.trim();
   const customerIdValue = source.customerId ? `${source.customerId}`.trim() : '';
@@ -31,6 +36,7 @@ const normalizeContactPayload = (payload = {}) => {
     customerName,
     contactName,
     designation,
+    mail,
     contactNumber,
     email,
   };
@@ -46,6 +52,7 @@ const normalizeContactRecord = (contact = {}) => {
   normalized.customerName = source.customerName || '';
   normalized.contactName = source.contactName || source.contactPerson || '';
   normalized.designation = source.designation || '';
+  normalized.mail = source.mail || '';
   normalized.contactNumber = source.contactNumber || source.number || '';
   normalized.email = source.email || '';
   return normalized;
@@ -80,6 +87,7 @@ exports.getContacts = async (req, res) => {
       customerName: 1,
       contactName: 1,
       designation: 1,
+      mail: 1,
       contactNumber: 1,
       email: 1,
       createdAt: 1,
@@ -126,7 +134,7 @@ exports.getContactById = async (req, res) => {
 exports.createContact = async (req, res) => {
   try {
     const payload = normalizeContactPayload(req.body);
-    const { customerId, customerName, contactName, designation = '', contactNumber, email } = payload;
+    const { customerId, customerName, contactName, designation = '', mail = '', contactNumber, email } = payload;
 
     let resolvedCustomerId = customerId || '';
     if (!resolvedCustomerId && customerName) {
@@ -136,8 +144,8 @@ exports.createContact = async (req, res) => {
       }
     }
 
-    if (!customerName || !contactName || !contactNumber || !email) {
-      return res.status(400).json({ success: false, message: 'Customer Name, Contact Name, Contact Number, and Email are required.' });
+    if (!contactName || !contactNumber || !email) {
+      return res.status(400).json({ success: false, message: 'Contact Name, Contact Number, and Email are required.' });
     }
 
     const contact = await Contact.create({
@@ -145,6 +153,7 @@ exports.createContact = async (req, res) => {
       customerName,
       contactName,
       designation: designation || '',
+      mail: mail || '',
       contactNumber,
       email,
     });
@@ -159,10 +168,62 @@ exports.createContact = async (req, res) => {
   }
 };
 
+exports.importContacts = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'Please upload an Excel file.' });
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) return res.status(400).json({ success: false, message: 'The Excel file has no worksheet.' });
+
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    const contactsToInsert = [];
+    const seenEmails = new Set();
+    const seenPhones = new Set();
+    let skipped = 0;
+
+    for (const row of rows) {
+      const values = Object.fromEntries(Object.entries(row).map(([key, value]) => [String(key).trim().toLowerCase(), String(value ?? '').trim()]));
+      const contactName = values['contact name'] || values.contactname || values['contact person'] || values.contactperson || '';
+      const designation = values.designation || '';
+      const contactNumber = normalizePhone(values['phone number'] || values.phonenumber || values.phone || values.number || '');
+      const email = (values.email || values['email address'] || values.emailaddress || '').toLowerCase();
+      const customerName = values['customer name'] || values.customername || values.company || '';
+
+      if (!contactName && !designation && !contactNumber && !email && !customerName) continue;
+      if (!contactName || !contactNumber || !importEmailPattern.test(email) || seenEmails.has(email) || seenPhones.has(contactNumber)) {
+        skipped += 1;
+        continue;
+      }
+
+      seenEmails.add(email);
+      seenPhones.add(contactNumber);
+      contactsToInsert.push({ contactName, designation, contactNumber, email, customerName, mail: values.mail || '' });
+    }
+
+    if (!contactsToInsert.length) return res.status(400).json({ success: false, message: 'No valid contacts were found in the Excel file.', skipped });
+
+    const existing = await Contact.find({ $or: [
+      { email: { $in: contactsToInsert.map((contact) => contact.email) } },
+      { contactNumber: { $in: contactsToInsert.map((contact) => contact.contactNumber) } },
+    ] }).select('email contactNumber').lean();
+    const existingEmails = new Set(existing.map((contact) => contact.email));
+    const existingPhones = new Set(existing.map((contact) => contact.contactNumber));
+    const newContacts = contactsToInsert.filter((contact) => !existingEmails.has(contact.email) && !existingPhones.has(contact.contactNumber));
+    skipped += contactsToInsert.length - newContacts.length;
+
+    if (!newContacts.length) return res.status(200).json({ success: true, message: 'No new contacts to import.', imported: 0, skipped });
+    const inserted = await Contact.insertMany(newContacts, { ordered: false });
+    res.status(201).json({ success: true, message: `Contacts imported successfully: ${inserted.length}`, imported: inserted.length, skipped });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message || 'Unable to process the Excel file.' });
+  }
+};
+
 exports.updateContact = async (req, res) => {
   try {
     const payload = normalizeContactPayload(req.body);
-    const { customerId, customerName, contactName, designation = '', contactNumber, email } = payload;
+    const { customerId, customerName, contactName, designation = '', mail = '', contactNumber, email } = payload;
 
     let resolvedCustomerId = customerId || '';
     if (!resolvedCustomerId && customerName) {
@@ -177,6 +238,7 @@ exports.updateContact = async (req, res) => {
       customerName,
       contactName,
       designation: designation || '',
+      mail: mail || '',
       contactNumber,
       email,
     }, { new: true, runValidators: true });
@@ -209,6 +271,8 @@ module.exports = {
   getContacts: exports.getContacts,
   getContactById: exports.getContactById,
   createContact: exports.createContact,
+  importContacts: exports.importContacts,
+  importUpload,
   updateContact: exports.updateContact,
   deleteContact: exports.deleteContact,
   buildWhatsAppUrl,

@@ -23,19 +23,20 @@ export function Sidebar() {
 
   const menuItems = [
     { href: '/sales/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/sales/leads', label: 'Lead Management', icon: Zap },
+    { href: '/sales/contacts', label: 'Contact', icon: Contact },
     { href: '/sales/mail-campaign', label: 'Mail Campaign', icon: Mail },
+    { href: '/sales/leads', label: 'Lead', icon: Zap },
+    { href: '/sales/activities', label: 'Activity', icon: Activity },
     { href: '/sales/calendar', label: 'Calendar', icon: Package2 },
-    { href: '/sales/activities', label: 'Activities', icon: Activity },
-    { href: '/sales/company-profiles', label: 'Company Profiles', icon: Building2 },
-    { href: '/sales/funnels', label: 'Funnels', icon: Users },
-    { href: '/sales/quotations', label: 'Quotations', icon: FileText },
-    { href: '/sales/customers', label: 'Customers', icon: Users },
-    { href: '/sales/contacts', label: 'Contacts', icon: Contact },
-    { href: '/sales/suppliers', label: 'Suppliers', icon: Package2 },
-    { href: '/sales/reports', label: 'Reports', icon: LayoutDashboard },
+    { href: '/sales/customers', label: 'Customer', icon: Users },
+    { href: '/sales/quotations', label: 'Quotation', icon: FileText },
+    { href: '/sales/suppliers', label: 'Supplier', icon: Package2 },
+    { href: '/sales/funnels', label: 'Funnel', icon: Users },
+    { href: '/sales/opf', label: 'OPF', icon: Building2 },
+    { href: '/sales/renewals', label: 'Renewals', icon: Package2 },
+    { href: '/sales/reports', label: 'Report', icon: LayoutDashboard },
     { href: '/sales/data-admin', label: 'Data Admin', icon: Package },
-    { href: '/sales/settings', label: 'Settings', icon: Package2 },
+    { href: '/sales/company-profiles', label: 'Company Profiles', icon: Building2 },
   ]
 
   return (

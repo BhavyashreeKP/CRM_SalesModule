@@ -383,12 +383,12 @@ export default function QuotationEditPage() {
       setErrors({})
       setToast('Quotation updated successfully')
       
-      // Clear API cache to ensure fresh data loads on dashboard
+      // Clear API cache to ensure fresh data loads
       clearApiCache()
 
-      // Navigate to dashboard after a short delay
+      // Navigate to quotation view page after a short delay
       setTimeout(() => {
-        navigate('/sales/quotations')
+        navigate(`/sales/quotations/${id}`)
       }, 1500)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update quotation'

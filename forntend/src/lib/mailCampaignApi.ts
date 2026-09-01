@@ -6,7 +6,23 @@ const api = axios.create({
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (axios.isAxiosError(error)) {
-    return error.response?.data?.message || error.response?.data?.details || error.message || fallback
+    const response = error.response?.data
+    if (response?.message) {
+      const context = [response.errorCode || response.code, response.field].filter(Boolean).join(' / ')
+      const validation = response.errors && typeof response.errors === 'object'
+        ? Object.values(response.errors).map((item) => {
+          if (typeof item === 'string') return item
+          if (item && typeof item === 'object' && 'message' in item) return String(item.message)
+          return ''
+        }).filter(Boolean).join('; ')
+        : ''
+      return [response.message, context, validation, response.details].filter(Boolean).join(' - ')
+    }
+    if (error.response?.status === 400) return 'The campaign data is invalid. Please check the required fields.'
+    if (error.response?.status === 404) return 'The campaign or required resource was not found.'
+    if (error.response?.status === 409) return 'The campaign could not be saved because it conflicts with an existing record.'
+    if (error.response?.status === 502) return 'The campaign was saved, but email delivery failed. Check the delivery report.'
+    return fallback
   }
 
   if (error instanceof Error) {
@@ -14,6 +30,18 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   }
 
   return fallback
+}
+
+export interface MailCampaignGroup {
+  _id?: string
+  groupName: string
+  contactIds: string[]
+  subject: string
+  message: string
+  status: string
+  recipientEmails: string[]
+  sentDate?: string
+  deliveryResults?: Array<{ recipientEmail: string; status: string; errorMessage?: string }>
 }
 
 export interface MailCampaignRecord {
@@ -43,6 +71,7 @@ export interface MailCampaignRecord {
   timezone: string
   sentDate: string
   testEmail: string
+  campaignGroups?: MailCampaignGroup[]
   createdAt?: string
   updatedAt?: string
 }
@@ -58,6 +87,17 @@ export interface MailCampaignListResponse {
   }
 }
 
+export interface MailCampaignReportRow {
+  serialNumber: number
+  campaignId: string
+  campaignName: string
+  sentBy: string
+  sentTo: string
+  subject: string
+  opens: number
+  clicks: number
+}
+
 export const getCampaigns = async (params?: Record<string, string | number>) => {
   const { data } = await api.get('/', { params })
   return data as MailCampaignListResponse
@@ -66,6 +106,23 @@ export const getCampaigns = async (params?: Record<string, string | number>) => 
 export const getCampaignById = async (id: string) => {
   const { data } = await api.get(`/${id}`)
   return data.data as MailCampaignRecord
+}
+
+export interface MailCampaignPreview {
+  from: string
+  to: string
+  subject: string
+  html: string
+}
+
+export const getCampaignPreview = async (id: string) => {
+  const { data } = await api.get(`/${id}/preview`)
+  return data as { success: boolean; data: MailCampaignPreview }
+}
+
+export const getCampaignReport = async (id: string) => {
+  const { data } = await api.get(`/${id}/report`)
+  return data as { success: boolean; data: MailCampaignReportRow[] }
 }
 
 export const createCampaign = async (formData: FormData) => {
@@ -117,5 +174,14 @@ export const sendCampaign = async (id: string, recipients?: string[]) => {
     return data
   } catch (error) {
     throw new Error(getErrorMessage(error, 'Unable to send campaign.'))
+  }
+}
+
+export const sendCampaignGroup = async (campaignId: string, groupId: string, recipients?: string[]) => {
+  try {
+    const { data } = await api.post(`/${campaignId}/send`, { groupId, recipients: recipients || [] })
+    return data
+  } catch (error) {
+    throw new Error(getErrorMessage(error, 'Unable to send campaign group.'))
   }
 }

@@ -111,13 +111,14 @@ const sendCampaignEmails = async ({
         to: recipient,
         subject,
         text: text || 'Email from CRM Mail Campaign',
-        html: html || '<p>Email from CRM Mail Campaign</p>',
+        html: (typeof html === 'function' ? html(recipient) : html) || '<p>Email from CRM Mail Campaign</p>',
         attachments: attachments.map((attachment) => {
           const attachmentPath = attachment.path || attachment.filename || '';
           return {
             filename: attachment.filename || attachment.originalname || path.basename(attachmentPath) || 'attachment',
             path: attachmentPath,
             contentType: attachment.mimetype,
+            cid: attachment.cid,
           };
         }),
       };
@@ -162,6 +163,123 @@ const sendCampaignEmails = async ({
   };
 };
 
+const sendQuotationEmail = async ({
+  recipient,
+  subject,
+  quotationNumber,
+  pdfBuffer,
+  pdfFileName,
+}) => {
+  const config = getSmtpConfig();
+  const smtpUser = config.auth.user;
+
+  logger.info('quotation.email.send.start', {
+    smtpUser: smtpUser || 'undefined',
+    recipient,
+    quotationNumber,
+  });
+
+  if (!smtpUser || !config.auth.pass) {
+    const message = 'SMTP credentials are not configured. EMAIL_USER and EMAIL_PASS are required.';
+    logger.error('quotation.email.config.invalid', { message });
+    return {
+      success: false,
+      message,
+      status: 'Failed',
+      errorMessage: message,
+    };
+  }
+
+  if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.trim())) {
+    const message = 'Invalid recipient email address.';
+    logger.error('quotation.email.recipient.invalid', { recipient, message });
+    return {
+      success: false,
+      message,
+      status: 'Failed',
+      errorMessage: message,
+    };
+  }
+
+  if (!pdfBuffer || !pdfFileName) {
+    const message = 'PDF buffer or filename is missing.';
+    logger.error('quotation.email.pdf.missing', { message });
+    return {
+      success: false,
+      message,
+      status: 'Failed',
+      errorMessage: message,
+    };
+  }
+
+  const transporter = createTransporter();
+
+  try {
+    await transporter.verify();
+    logger.info('quotation.email.smtp.verified', { smtpUser });
+  } catch (error) {
+    logger.error('quotation.email.smtp.verify.failed', {
+      smtpUser,
+      error: error?.message || 'Unknown SMTP verify error',
+      stack: error?.stack,
+    });
+
+    return {
+      success: false,
+      message: error?.message || 'SMTP verification failed',
+      status: 'Failed',
+      errorMessage: error?.message || 'SMTP verification failed',
+    };
+  }
+
+  try {
+    const mailOptions = {
+      from: `CRM Quotation <${smtpUser}>`,
+      to: recipient.trim(),
+      subject: subject || `Quotation ${quotationNumber}`,
+      text: `Dear Sir/Madam,\n\nPlease find attached the quotation.\n\nBest regards,\nSynov IT Services`,
+      html: `<p>Dear Sir/Madam,</p><p>Please find attached the quotation ${quotationNumber}.</p><p>Best regards,<br>Synov IT Services</p>`,
+      attachments: [
+        {
+          filename: pdfFileName,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        },
+      ],
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    
+    logger.info('quotation.email.send.success', {
+      recipient,
+      quotationNumber,
+      messageId: info.messageId,
+    });
+
+    return {
+      success: true,
+      message: 'Quotation email sent successfully',
+      status: 'Sent',
+      messageId: info.messageId,
+    };
+  } catch (error) {
+    logger.error('quotation.email.send.failed', {
+      recipient,
+      quotationNumber,
+      error: error?.message || 'Unknown email sending error',
+      stack: error?.stack,
+    });
+
+    return {
+      success: false,
+      message: error?.message || 'Failed to send quotation email',
+      status: 'Failed',
+      errorMessage: error?.message || 'Unknown email sending error',
+    };
+  }
+};
+
 module.exports = {
   sendCampaignEmails,
+  sendQuotationEmail,
 };

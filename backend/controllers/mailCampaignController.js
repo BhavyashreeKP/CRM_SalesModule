@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const sanitizeHtml = require('sanitize-html');
 const multer = require('multer');
 const mongoose = require('mongoose');
@@ -8,6 +9,7 @@ const EmailLog = require('../models/EmailLog');
 const Counter = require('../models/Counter');
 const Customer = require('../models/Customer');
 const Contact = require('../models/Contact');
+const CompanyProfile = require('../models/CompanyProfile');
 const Lead = require('../models/Lead');
 const Supplier = require('../models/Supplier');
 const { sendCampaignEmails } = require('../services/emailService');
@@ -58,16 +60,54 @@ const fileFilter = (_req, file, cb) => {
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MB per uploaded file
+    fieldSize: 5 * 1024 * 1024,  // 5 MB for text fields such as campaign body
+    files: 11,                   // 1 image + up to 10 attachments
+  },
   fileFilter,
 });
 
-const uploads = upload.fields([
-  { name: 'image', maxCount: 1 },
-  { name: 'attachments', maxCount: 10 },
-]);
+const uploads = (req, res, next) => {
+  upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'attachments', maxCount: 10 },
+  ])(req, res, (error) => {
+    if (error) {
+      console.error('========== CAMPAIGN UPLOAD ERROR ==========');
+      console.error('Name:', error.name);
+      console.error('Code:', error.code);
+      console.error('Message:', error.message);
+      console.error('Field:', error.field);
+      console.error('============================================');
 
-const sanitize = (value = '') => sanitizeHtml(value, { allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'h1', 'h2', 'h3', 'span', 'font']), allowedAttributes: { ...sanitizeHtml.defaults.allowedAttributes, img: ['src', 'alt', 'title'] } });
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Campaign file upload failed.',
+        errorCode: error.code || 'UPLOAD_ERROR',
+        field: error.field || null,
+      });
+    }
+
+    next();
+  });
+};
+const sanitize = (value = '') => sanitizeHtml(value, {
+  allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'h1', 'h2', 'h3', 'span', 'font']),
+  allowedAttributes: { ...sanitizeHtml.defaults.allowedAttributes, '*': ['style'], img: ['src', 'alt', 'title'] },
+  allowedSchemes: ['http', 'https', 'mailto', 'data'],
+  allowedSchemesByTag: { img: ['http', 'https', 'data'] },
+  allowedStyles: {
+    '*': {
+      color: [/^#[0-9a-f]{3,8}$/i, /^rgba?\([^)]*\)$/i],
+      'background-color': [/^#[0-9a-f]{3,8}$/i, /^rgba?\([^)]*\)$/i],
+      'font-size': [/^\d+(?:\.\d+)?(?:px|pt|em|rem|%)$/i],
+      'font-weight': [/^(?:normal|bold|[1-9]00)$/i],
+      'text-align': [/^(?:left|center|right|justify)$/i],
+      'text-decoration': [/^(?:none|underline|line-through)$/i],
+    },
+  },
+});
 
 const parseArrayField = (value) => {
   if (!value) return [];
@@ -83,6 +123,53 @@ const parseArrayField = (value) => {
   return [];
 };
 
+const parseCampaignGroups = (value) => {
+  if (!value) return [];
+  const rawGroups = Array.isArray(value) ? value : typeof value === 'string' ? (() => { try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; } })() : [];
+
+  return rawGroups.map((group, index) => {
+    const contactIds = Array.isArray(group?.contactIds) ? group.contactIds.map((id) => String(id)).filter(Boolean) : [];
+    const recipientEmails = Array.isArray(group?.recipientEmails) ? group.recipientEmails.map((item) => String(item).trim()).filter(Boolean) : [];
+    const cleanGroup = {
+      groupName: String(group?.groupName || `Campaign Group ${index + 1}`).trim() || `Campaign Group ${index + 1}`,
+      contactIds: [...new Set(contactIds)],
+      subject: String(group?.subject || '').trim(),
+      message: String(group?.message || '').trim(),
+      status: group?.status || 'Draft',
+      recipientEmails: [...new Set(recipientEmails)],
+      sentDate: group?.sentDate || '',
+      deliveryResults: Array.isArray(group?.deliveryResults) ? group.deliveryResults : [],
+    };
+    return cleanGroup;
+  });
+};
+
+const resolveContactRecipients = async (groups) => {
+  const requestedContactIds = [...new Set(groups.flatMap((group) => group.contactIds).filter(Boolean))];
+  const contactIds = requestedContactIds.filter((id) => mongoose.isValidObjectId(id));
+  if (requestedContactIds.length && contactIds.length !== requestedContactIds.length) {
+    const error = new Error('One or more Contact identifiers are invalid.');
+    error.name = 'CastError';
+    throw error;
+  }
+  const contactQuery = contactIds.length
+    ? { _id: { $in: contactIds }, email: { $regex: validEmailRegex } }
+    : { email: { $regex: validEmailRegex } };
+  const contacts = await Contact.find(contactQuery).select('_id email').lean();
+  const emailByContactId = new Map(contacts.map((contact) => [String(contact._id), String(contact.email).trim().toLowerCase()]));
+
+  return groups.map((group) => {
+      const validContactIds = requestedContactIds.length
+      ? group.contactIds.filter((id) => emailByContactId.has(String(id)))
+      : contacts.map((contact) => String(contact._id));
+    return {
+      ...group,
+      contactIds: validContactIds,
+      recipientEmails: [...new Set(validContactIds.map((id) => emailByContactId.get(String(id))).filter(Boolean))],
+    };
+  });
+};
+
 const normalizeCampaign = (campaign) => ({
   ...campaign,
   _id: campaign._id?.toString(),
@@ -92,6 +179,13 @@ const normalizeCampaign = (campaign) => ({
   attachments: campaign.attachments || [],
   image: campaign.image || '',
   tags: campaign.tags || [],
+  campaignGroups: Array.isArray(campaign.campaignGroups) ? campaign.campaignGroups.map((group) => ({
+    ...group,
+    _id: group._id ? group._id.toString() : undefined,
+    contactIds: Array.isArray(group.contactIds) ? group.contactIds.map((id) => String(id)) : [],
+    recipientEmails: Array.isArray(group.recipientEmails) ? group.recipientEmails : [],
+    deliveryResults: Array.isArray(group.deliveryResults) ? group.deliveryResults : [],
+  })) : [],
   deliveryResults: campaign.deliveryResults || [],
 });
 
@@ -110,22 +204,8 @@ const normalizeCampaign = (campaign) => ({
 // };
 
 const getNextCampaignId = async () => {
-  // Get the highest campaign ID already stored
-  const lastCampaign = await MailCampaign.findOne(
-    { campaignId: { $exists: true } },
-    { campaignId: 1 }
-  )
-    .sort({ campaignId: -1 })
-    .lean();
-
-  let highestNumber = 0;
-
-  if (lastCampaign?.campaignId) {
-    highestNumber = parseInt(
-      lastCampaign.campaignId.replace("CMP-", ""),
-      10
-    ) || 0;
-  }
+  const campaignIds = await MailCampaign.find({ campaignId: /^CMP-\d+$/ }, { campaignId: 1 }).lean();
+  const highestNumber = campaignIds.reduce((highest, campaign) => Math.max(highest, Number(campaign.campaignId.slice(4)) || 0), 0);
 
   // Get or create the counter
   let counter = await Counter.findOne({ name: "mailCampaign" });
@@ -150,12 +230,26 @@ const getNextCampaignId = async () => {
     { new: true }
   );
 
-  return `CMP-${String(counter.value).padStart(6, "0")}`;
+  return `CMP-${counter.value}`;
 };
 
 const isValidEmail = (value) => typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
 const validEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
+const respondToDatabaseError = (res, error, fallback) => {
+  if (error?.code === 11000) {
+    return res.status(409).json({ success: false, message: 'A campaign with this ID already exists. Please retry.' });
+  }
+  if (error?.name === 'ValidationError') {
+    return res.status(400).json({ success: false, message: 'Campaign data is invalid. Check the required fields and values.' });
+  }
+  if (error?.name === 'CastError') {
+    return res.status(400).json({ success: false, message: 'Campaign or Contact identifier is invalid.' });
+  }
+  logger.error('mail-campaign.database.failed', { message: error?.message, stack: error?.stack, fallback });
+  return res.status(500).json({ success: false, message: fallback });
+};
 
 const getEmailList = async (Model, fieldName, filter = {}) => {
   if (!Model) return [];
@@ -305,31 +399,157 @@ exports.getCampaignById = async (req, res) => {
     if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found' });
     res.status(200).json({ success: true, data: normalizeCampaign(campaign) });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    respondToDatabaseError(res, error, 'Unable to load campaign.');
+  }
+};
+
+const getTrackingBaseUrl = (req) => process.env.PUBLIC_API_URL || `${req.protocol}://${req.get('host')}`;
+
+const buildCampaignEmailHtml = ({ htmlBody, footer, logoHtml }) => `<div style="margin: 0; padding: 0; color: #1f2937; font-family: 'Times New Roman', Times, serif !important; font-size: 16px; line-height: 1.5;"><style>div, p, h1, h2, h3, span, li { font-family: 'Times New Roman', Times, serif !important; } p { margin: 0 0 16px; min-height: 1.5em; } img { width: auto; max-width: 100%; height: auto; }</style>${logoHtml}${htmlBody}${footer ? `<div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-family: 'Times New Roman', Times, serif !important;">${footer}</div>` : ''}</div>`;
+
+const addEmailTracking = (html, campaignId, trackingToken, baseUrl) => {
+  const trackedHtml = String(html || '').replace(/href\s*=\s*(["'])(https?:\/\/[^"']+)\1/gi, (_match, quote, destination) => (
+    `href=${quote}${baseUrl}/api/mail-campaigns/tracking/click/${trackingToken}?url=${encodeURIComponent(destination)}${quote}`
+  ));
+  return `${trackedHtml}<img src="${baseUrl}/api/mail-campaigns/tracking/open/${trackingToken}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px;" />`;
+};
+
+exports.trackOpen = async (req, res) => {
+  try {
+    const result = await EmailLog.updateOne(
+      { trackingToken: req.params.token, openedAt: null },
+      { $set: { openedAt: new Date() } }
+    );
+    if (result.modifiedCount) {
+      const log = await EmailLog.findOne({ trackingToken: req.params.token }).select('campaignId').lean();
+      if (log) await MailCampaign.updateOne({ campaignId: log.campaignId }, { $inc: { opens: 1 } });
+    }
+  } catch (error) {
+    logger.error('mail-campaign.track-open.failed', { message: error?.message, stack: error?.stack });
+  }
+  res.type('gif').send(Buffer.from('R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=', 'base64'));
+};
+
+exports.trackClick = async (req, res) => {
+  const destination = String(req.query.url || '');
+  if (!/^https?:\/\//i.test(destination)) return res.status(400).json({ success: false, message: 'Tracked destination is invalid.' });
+  try {
+    const result = await EmailLog.updateOne(
+      { trackingToken: req.params.token, clickedAt: null },
+      { $set: { clickedAt: new Date() } }
+    );
+    if (result.modifiedCount) {
+      const log = await EmailLog.findOne({ trackingToken: req.params.token }).select('campaignId').lean();
+      if (log) await MailCampaign.updateOne({ campaignId: log.campaignId }, { $inc: { clicks: 1 } });
+    }
+  } catch (error) {
+    logger.error('mail-campaign.track-click.failed', { message: error?.message, stack: error?.stack });
+  }
+  return res.redirect(destination);
+};
+
+exports.getCampaignReport = async (req, res) => {
+  try {
+    const campaign = await MailCampaign.findOne({ _id: req.params.id, deletedAt: null }).select('campaignId campaignName subject').lean();
+    if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found.' });
+    const logs = await EmailLog.find({ campaignId: campaign.campaignId }).sort({ sentAt: 1 }).lean();
+    res.status(200).json({
+      success: true,
+      data: logs.map((log, index) => ({
+        serialNumber: index + 1,
+        campaignId: campaign.campaignId,
+        campaignName: campaign.campaignName,
+        sentBy: log.senderEmail || process.env.EMAIL_USER || process.env.SMTP_USER || '',
+        sentTo: log.recipientEmail,
+        subject: campaign.subject,
+        opens: log.openedAt ? 1 : 0,
+        clicks: log.clickedAt ? 1 : 0,
+      })),
+    });
+  } catch (error) {
+    logger.error('mail-campaign.report.failed', { message: error?.message, stack: error?.stack });
+    res.status(500).json({ success: false, message: 'Unable to load the campaign report.' });
+  }
+};
+
+exports.getCampaignPreview = async (req, res) => {
+  try {
+    const campaign = await MailCampaign.findOne({ _id: req.params.id, deletedAt: null }).lean();
+    if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found.' });
+    const companyProfile = await CompanyProfile.findOne().sort({ createdAt: -1 }).select('companyLogo').lean();
+    const logoPath = companyProfile?.companyLogo?.filePath || '';
+    const logoUrl = logoPath ? `${getTrackingBaseUrl(req)}${logoPath.startsWith('/') ? logoPath : `/${logoPath}`}` : '';
+    const imageBeforeText = ['Image Before Text', 'Image Above Text'].includes(campaign.imageAlignment);
+    const logoHtml = logoUrl
+      ? `<p style="margin: 0 0 20px; min-height: 1.5em;"><img src="${logoUrl}" alt="Company logo" style="display: block; width: 120px; max-width: 120px; height: auto;" /></p>`
+      : '';
+    const htmlBody = imageBeforeText ? `${logoHtml}${campaign.campaignBody || '<p>Campaign email</p>'}` : `${campaign.campaignBody || '<p>Campaign email</p>'}${logoHtml}`;
+    const logs = await EmailLog.find({ campaignId: campaign.campaignId }).sort({ sentAt: -1 }).select('recipientEmail senderEmail').lean();
+    res.status(200).json({
+      success: true,
+      data: {
+        from: logs[0]?.senderEmail || process.env.EMAIL_USER || process.env.SMTP_USER || '',
+        to: logs[0]?.recipientEmail || campaign.recipientEmails?.[0] || '',
+        subject: campaign.subject,
+        html: buildCampaignEmailHtml({ htmlBody, footer: campaign.footer, logoHtml: '' }),
+      },
+    });
+  } catch (error) {
+    logger.error('mail-campaign.preview.failed', { message: error?.message, stack: error?.stack });
+    res.status(500).json({ success: false, message: 'Unable to load the campaign email preview.' });
   }
 };
 
 exports.createCampaign = async (req, res) => {
   try {
+    const incomingGroups = parseCampaignGroups(req.body.campaignGroups);
     const recipientEmails = parseArrayField(req.body.recipientEmails);
-    if (!req.body.campaignName || !req.body.subject || recipientEmails.length === 0 || !req.body.campaignBody || !req.body.footer) {
-      return res.status(400).json({ success: false, message: 'Please fill out all required fields.' });
+    const legacyGroups = incomingGroups.length ? incomingGroups : [{
+      groupName: 'Campaign Group 1',
+      contactIds: parseArrayField(req.body.contactIds),
+      subject: req.body.subject || '',
+      message: req.body.campaignBody || '',
+      status: req.body.status || 'Draft',
+      recipientEmails,
+    }];
+    const finalGroups = legacyGroups.map((group, index) => ({
+      groupName: String(group.groupName || `Campaign Group ${index + 1}`).trim() || `Campaign Group ${index + 1}`,
+      contactIds: Array.isArray(group.contactIds) ? group.contactIds.map((id) => String(id)).filter(Boolean) : [],
+      subject: String(group.subject || req.body.subject || '').trim(),
+      message: sanitize(String(group.message || req.body.campaignBody || '')),
+      status: group.status || req.body.status || 'Draft',
+      recipientEmails: [...new Set((Array.isArray(group.recipientEmails) ? group.recipientEmails : recipientEmails).map((item) => String(item).trim()).filter(Boolean))],
+      sentDate: group.sentDate || '',
+      deliveryResults: Array.isArray(group.deliveryResults) ? group.deliveryResults : [],
+    }));
+
+    const resolvedGroups = await resolveContactRecipients(finalGroups);
+    const flattenedRecipientEmails = [...new Set(resolvedGroups.flatMap((group) => group.recipientEmails))];
+
+    if (!req.body.campaignName?.trim()) {
+      return res.status(400).json({ success: false, message: 'Campaign name is required.' });
+    }
+    if (!req.body.subject?.trim()) {
+      return res.status(400).json({ success: false, message: 'Subject is required.' });
+    }
+    if (!flattenedRecipientEmails.length) {
+      return res.status(400).json({ success: false, message: 'No Contacts with valid email addresses are available for this campaign.' });
     }
 
     const campaignId = await getNextCampaignId();
     const payload = {
       campaignId,
       campaignName: req.body.campaignName || '',
-      subject: req.body.subject || '',
+      subject: finalGroups[0]?.subject || req.body.subject || '',
       campaignType: req.body.campaignType || 'Promotional',
       priority: req.body.priority || 'Medium',
       imageAlignment: req.body.imageAlignment || 'Image Before Text',
       tags: parseArrayField(req.body.tags),
       recipientModules: parseArrayField(req.body.recipientModules),
       recipientGroup: parseArrayField(req.body.recipientGroup),
-      recipientEmails,
-      recipientCount: Number(req.body.recipientCount || recipientEmails.length),
-      campaignBody: sanitize(req.body.campaignBody || ''),
+      recipientEmails: flattenedRecipientEmails,
+      recipientCount: flattenedRecipientEmails.length,
+      campaignBody: sanitize(req.body.campaignBody || finalGroups[0]?.message || ''),
       footer: sanitize(req.body.footer || ''),
       image: req.files?.image?.[0]?.filename ? `/uploads/mail-campaigns/${req.files.image[0].filename}` : req.body.image || '',
       attachments: (req.files?.attachments || []).map((file) => `/uploads/mail-campaigns/${file.filename}`),
@@ -341,7 +561,17 @@ exports.createCampaign = async (req, res) => {
       timezone: req.body.timezone || 'UTC',
       sentDate: req.body.sentDate || '',
       testEmail: req.body.testEmail || '',
+      campaignGroups: resolvedGroups,
     };
+
+    console.log({
+      campaignNameLength: payload.campaignName?.length,
+      subjectLength: payload.subject?.length,
+      campaignBodyLength: payload.campaignBody?.length,
+      footerLength: payload.footer?.length,
+      imageLength: payload.image?.length,
+      recipientCount: payload.recipientEmails?.length,
+    });
 
     const campaign = await MailCampaign.create(payload);
 
@@ -359,8 +589,7 @@ exports.createCampaign = async (req, res) => {
       message: error?.message,
       stack: error?.stack,
     });
-    const message = error?.code === 11000 ? 'A campaign with this ID already exists. Please retry.' : error.message || 'Failed to create campaign.';
-    res.status(500).json({ success: false, message });
+    respondToDatabaseError(res, error, 'Unable to create campaign due to an unexpected database error.');
   }
 };
 
@@ -369,19 +598,42 @@ exports.updateCampaign = async (req, res) => {
     const existing = await MailCampaign.findOne({ _id: req.params.id, deletedAt: null });
     if (!existing) return res.status(404).json({ success: false, message: 'Campaign not found' });
 
+    const incomingGroups = parseCampaignGroups(req.body.campaignGroups);
     const recipientEmails = parseArrayField(req.body.recipientEmails || existing.recipientEmails);
+    const legacyGroups = incomingGroups.length ? incomingGroups : [{
+      groupName: 'Campaign Group 1',
+      contactIds: parseArrayField(req.body.contactIds),
+      subject: req.body.subject || existing.subject || '',
+      message: req.body.campaignBody || existing.campaignBody || '',
+      status: req.body.status || existing.status || 'Draft',
+      recipientEmails,
+    }];
+    const finalGroups = legacyGroups.map((group, index) => ({
+      groupName: String(group.groupName || `Campaign Group ${index + 1}`).trim() || `Campaign Group ${index + 1}`,
+      contactIds: Array.isArray(group.contactIds) ? group.contactIds.map((id) => String(id)).filter(Boolean) : [],
+      subject: String(group.subject || req.body.subject || existing.subject || '').trim(),
+      message: sanitize(String(group.message || req.body.campaignBody || existing.campaignBody || '')),
+      status: group.status || req.body.status || existing.status || 'Draft',
+      recipientEmails: [...new Set((Array.isArray(group.recipientEmails) ? group.recipientEmails : recipientEmails).map((item) => String(item).trim()).filter(Boolean))],
+      sentDate: group.sentDate || existing.sentDate || '',
+      deliveryResults: Array.isArray(group.deliveryResults) ? group.deliveryResults : [],
+    }));
+
+    const resolvedGroups = await resolveContactRecipients(finalGroups);
+    const flattenedRecipientEmails = [...new Set(resolvedGroups.flatMap((group) => group.recipientEmails))];
+
     const payload = {
       campaignName: req.body.campaignName || existing.campaignName || '',
-      subject: req.body.subject || existing.subject || '',
+      subject: finalGroups[0]?.subject || req.body.subject || existing.subject || '',
       campaignType: req.body.campaignType || existing.campaignType || 'Promotional',
       priority: req.body.priority || existing.priority || 'Medium',
       imageAlignment: req.body.imageAlignment || existing.imageAlignment || 'Image Before Text',
       tags: parseArrayField(req.body.tags || existing.tags),
       recipientModules: parseArrayField(req.body.recipientModules || existing.recipientModules),
       recipientGroup: parseArrayField(req.body.recipientGroup || existing.recipientGroup),
-      recipientEmails,
-      recipientCount: Number(req.body.recipientCount || existing.recipientCount || recipientEmails.length),
-      campaignBody: sanitize(req.body.campaignBody || existing.campaignBody || ''),
+      recipientEmails: flattenedRecipientEmails,
+      recipientCount: flattenedRecipientEmails.length,
+      campaignBody: sanitize(req.body.campaignBody || finalGroups[0]?.message || existing.campaignBody || ''),
       footer: sanitize(req.body.footer || existing.footer || ''),
       image: req.files?.image?.[0]?.filename ? `/uploads/mail-campaigns/${req.files.image[0].filename}` : req.body.image || existing.image || '',
       attachments: (req.files?.attachments || []).length > 0
@@ -395,30 +647,50 @@ exports.updateCampaign = async (req, res) => {
       timezone: req.body.timezone || existing.timezone || 'UTC',
       sentDate: req.body.sentDate || existing.sentDate || '',
       testEmail: req.body.testEmail || existing.testEmail || '',
+      campaignGroups: resolvedGroups,
     };
 
-    if (!payload.campaignName || !payload.subject || payload.recipientEmails.length === 0 || !payload.campaignBody || !payload.footer) {
-      return res.status(400).json({ success: false, message: 'Please fill out all required fields.' });
+    if (!payload.campaignName || !resolvedGroups.length || !flattenedRecipientEmails.length) {
+      return res.status(400).json({ success: false, message: 'Please select at least one contact with a valid email address.' });
     }
 
     const campaign = await MailCampaign.findByIdAndUpdate(req.params.id, payload, { new: true, runValidators: true });
     res.status(200).json({ success: true, message: 'Campaign updated successfully', data: normalizeCampaign(campaign.toObject()) });
   } catch (error) {
     console.error('[mail-campaign] updateCampaign failed:', error);
-    res.status(500).json({ success: false, message: error.message || 'Failed to update campaign.' });
+    respondToDatabaseError(res, error, 'Unable to update campaign due to an unexpected database error.');
   }
 };
 
 exports.deleteCampaign = async (req, res) => {
   try {
-    const campaign = await MailCampaign.findById(req.params.id);
+    const identifier = String(req.params.id || '').trim();
+    const campaignQuery = mongoose.isValidObjectId(identifier)
+      ? { $or: [{ _id: identifier }, { campaignId: identifier }] }
+      : { campaignId: identifier };
+    const campaign = await MailCampaign.findOne(campaignQuery);
     if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found' });
-    campaign.deletedAt = new Date();
-    campaign.status = 'Trash';
-    await campaign.save();
-    res.status(200).json({ success: true, message: 'Campaign moved to trash' });
+
+    const campaignFiles = [campaign.image, ...(campaign.attachments || [])]
+      .filter((filePath) => typeof filePath === 'string' && filePath.startsWith('/uploads/mail-campaigns/'))
+      .map((filePath) => path.join(__dirname, '..', filePath.replace(/^\/+/, '')));
+
+    await Promise.all([
+      MailCampaign.deleteOne({ _id: campaign._id }),
+      EmailLog.deleteMany({ campaignId: campaign.campaignId }),
+    ]);
+    await Promise.all(campaignFiles.map(async (filePath) => {
+      try {
+        await fs.promises.unlink(filePath);
+      } catch (error) {
+        if (error.code !== 'ENOENT') logger.error('mail-campaign.file-delete.failed', { message: error.message, campaignId: campaign.campaignId });
+      }
+    }));
+
+    res.status(200).json({ success: true, message: 'Campaign deleted successfully.' });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    logger.error('mail-campaign.delete.failed', { message: error?.message, stack: error?.stack });
+    respondToDatabaseError(res, error, 'Unable to delete campaign.');
   }
 };
 
@@ -431,34 +703,66 @@ exports.sendCampaign = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Campaign not found' });
     }
 
+    const groupId = req.body?.groupId || req.query?.groupId || '';
+    let subject = campaign.subject || '';
+    let htmlBody = campaign.campaignBody || '<p>Campaign email</p>';
     let recipients = [];
-    if (Array.isArray(req.body?.recipients) && req.body.recipients.length) {
-      recipients = req.body.recipients;
-    } else if (typeof req.body?.recipients === 'string' && req.body.recipients.trim()) {
-      recipients = req.body.recipients.split(',').map((item) => item.trim()).filter(Boolean);
+    let targetGroup = null;
+
+    if (groupId) {
+      targetGroup = (campaign.campaignGroups || []).find((group) => String(group._id) === String(groupId) || String(group.groupName) === String(groupId));
+      if (!targetGroup) {
+        return res.status(404).json({ success: false, message: 'Campaign group not found.' });
+      }
+      subject = targetGroup.subject || campaign.subject || '';
+      htmlBody = targetGroup.message || campaign.campaignBody || '<p>Campaign email</p>';
+      const [refreshedGroup] = await resolveContactRecipients([targetGroup]);
+      recipients = refreshedGroup.recipientEmails;
+      targetGroup.contactIds = refreshedGroup.contactIds;
+      targetGroup.recipientEmails = refreshedGroup.recipientEmails;
+      targetGroup.status = 'Sending';
+      targetGroup.sentDate = '';
+      await campaign.save();
     } else {
-      recipients = campaign.recipientEmails || [];
+      const refreshedGroups = await resolveContactRecipients(campaign.campaignGroups || [{ contactIds: [] }]);
+      recipients = refreshedGroups.flatMap((group) => group.recipientEmails);
+      campaign.campaignGroups = refreshedGroups;
+      campaign.recipientEmails = [...new Set(recipients)];
+      campaign.status = 'Sending';
+      campaign.recipientCount = recipients.length;
+      await campaign.save();
     }
 
     const normalizedRecipients = [...new Set(recipients.map((item) => String(item).trim()).filter(Boolean))];
 
     if (!normalizedRecipients.length) {
-      return res.status(400).json({ success: false, message: 'No recipients found for this campaign.' });
+      return res.status(400).json({ success: false, message: 'No recipients found for this campaign group.' });
     }
 
-    campaign.status = 'Sending';
-    campaign.recipientCount = normalizedRecipients.length;
-    await campaign.save();
+    const companyProfile = await CompanyProfile.findOne().sort({ createdAt: -1 }).select('companyLogo').lean();
+    const logoPath = companyProfile?.companyLogo?.filePath || '';
+    const localLogoPath = logoPath ? path.join(__dirname, '..', logoPath.replace(/^\/+/, '')) : '';
+    const hasLogo = localLogoPath && fs.existsSync(localLogoPath);
+    const logoHtml = hasLogo ? '<p style="margin: 0 0 20px; min-height: 1.5em;"><img src="cid:synov-company-logo" alt="Synov company logo" style="display: block; width: 120px; max-width: 120px; height: auto;" /></p>' : '';
+    const imageBeforeText = ['Image Before Text', 'Image Above Text'].includes(campaign.imageAlignment);
+    const emailBody = imageBeforeText ? `${logoHtml}${htmlBody}` : `${htmlBody}${logoHtml}`;
+    const logoAttachment = hasLogo ? [{
+      filename: path.basename(localLogoPath),
+      path: localLogoPath,
+      cid: 'synov-company-logo',
+    }] : [];
 
-    const htmlBody = campaign.campaignBody || '<p>Campaign email</p>';
+    const trackingTokens = new Map(normalizedRecipients.map((recipient) => [recipient, crypto.randomBytes(24).toString('hex')]));
+    const trackingBaseUrl = getTrackingBaseUrl(req);
+
     const report = await sendCampaignEmails({
-      subject: campaign.subject,
-      html: `${htmlBody}${campaign.footer ? `<div>${campaign.footer}</div>` : ''}`,
-      text: campaign.footer || campaign.subject,
+      subject,
+      html: (recipient) => addEmailTracking(buildCampaignEmailHtml({ htmlBody: emailBody, footer: campaign.footer, logoHtml: '' }), campaign.campaignId, trackingTokens.get(recipient), trackingBaseUrl),
+      text: campaign.footer || subject || 'Campaign email',
       to: normalizedRecipients,
       attachments: (campaign.attachments || []).map((attachmentPath) => ({
         path: path.join(__dirname, '..', attachmentPath.replace(/^[\/]+/, '')),
-      })),
+      })).concat(logoAttachment),
       fromName: process.env.MAIL_FROM_NAME || 'CRM Mail Campaign',
     });
 
@@ -472,21 +776,30 @@ exports.sendCampaign = async (req, res) => {
       status: item.status,
       sentAt: new Date(),
       errorMessage: item.errorMessage || '',
+      senderEmail: process.env.EMAIL_USER || process.env.SMTP_USER || '',
+      trackingToken: trackingTokens.get(item.recipientEmail) || '',
     }));
 
     await EmailLog.insertMany(emailLogs);
 
-    if (failedCount === 0) {
-      campaign.status = 'Sent';
-    } else if (sentCount > 0) {
-      campaign.status = 'Partially Sent';
+    if (groupId && targetGroup) {
+      targetGroup.recipientEmails = normalizedRecipients;
+      targetGroup.deliveryResults = report.results;
+      targetGroup.sentDate = new Date().toISOString();
+      targetGroup.status = failedCount === 0 ? 'Sent' : sentCount > 0 ? 'Partially Sent' : 'Failed';
     } else {
-      campaign.status = 'Failed';
+      if (failedCount === 0) {
+        campaign.status = 'Sent';
+      } else if (sentCount > 0) {
+        campaign.status = 'Partially Sent';
+      } else {
+        campaign.status = 'Failed';
+      }
+      campaign.sentDate = new Date().toISOString();
+      campaign.deliveryResults = report.results;
     }
 
-    campaign.sentDate = new Date().toISOString();
     campaign.recipientCount = normalizedRecipients.length;
-    campaign.deliveryResults = report.results;
     campaign.opens = Number(campaign.opens || 0);
     campaign.clicks = Number(campaign.clicks || 0);
     await campaign.save();
@@ -494,26 +807,47 @@ exports.sendCampaign = async (req, res) => {
     logger.info('mail-campaign.send', {
       campaignId: campaign.campaignId,
       campaignName: campaign.campaignName,
+      groupId: groupId || null,
       recipientCount: normalizedRecipients.length,
       successfullySent: report.successfullySent,
       failed: report.failed,
-      status: campaign.status,
+      status: groupId ? (targetGroup ? targetGroup.status : campaign.status) : campaign.status,
     });
+
+    if (failedCount === report.totalRecipients) {
+      return res.status(502).json({
+        success: false,
+        message: 'Campaign was saved, but email delivery failed. Check the mail server configuration and delivery report.',
+        data: {
+          campaignId: campaign.campaignId,
+          groupId: groupId || null,
+          totalRecipients: report.totalRecipients,
+          successfullySent: report.successfullySent,
+          failed: report.failed,
+          status: groupId ? (targetGroup ? targetGroup.status : campaign.status) : campaign.status,
+        },
+      });
+    }
 
     res.status(200).json({
       success: true,
-      message: campaign.status === 'Sent' ? 'Campaign Sent Successfully' : campaign.status === 'Partially Sent' ? 'Campaign Partially Sent' : 'Campaign Failed',
+      message: groupId ? 'Campaign group sent successfully.' : (campaign.status === 'Sent' ? 'Campaign Sent Successfully' : campaign.status === 'Partially Sent' ? 'Campaign Partially Sent' : 'Campaign Failed'),
       data: {
         campaignId: campaign.campaignId,
+        groupId: groupId || null,
         totalRecipients: report.totalRecipients,
         successfullySent: report.successfullySent,
         failed: report.failed,
         results: report.results,
-        status: campaign.status,
+        status: groupId ? (targetGroup ? targetGroup.status : campaign.status) : campaign.status,
       },
     });
   } catch (error) {
     console.error('[mail-campaign] sendCampaign failed:', error);
-    res.status(500).json({ success: false, message: error.message || 'Failed to send campaign email.', details: error?.response || error?.stack || '' });
+    if (error?.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Campaign identifier is invalid.' });
+    }
+    logger.error('mail-campaign.send.failed', { message: error?.message, stack: error?.stack });
+    res.status(500).json({ success: false, message: 'Unable to complete email delivery due to an unexpected server error.' });
   }
 };

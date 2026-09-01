@@ -21,7 +21,7 @@ const paymentTermsOptions = [
 
 const contactTypeOptions = ['Accounts', 'Production', 'Marketing', 'Finance', 'Management', 'Technical', 'Purchase', 'Sales', 'Administration', 'Other']
 
-const categoryOptions = ['Raw Material', 'Finished Goods', 'Services', 'Spare Parts', 'Other']
+const categoryOptions = ['Mass', 'RKAM', 'NKAM', 'Laptop', 'Masks', 'Other']
 
 export default function SupplierFormPage() {
   const navigate = useNavigate()

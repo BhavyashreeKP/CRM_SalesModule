@@ -14,6 +14,7 @@ export default function ContactFormPage() {
   const [form, setForm] = useState<ContactPayload>({
     contactName: '',
     designation: '',
+    mail: '',
     contactNumber: '',
     email: '',
   })
@@ -28,6 +29,7 @@ export default function ContactFormPage() {
         setForm({
           contactName: contact.contactName,
           designation: contact.designation,
+          mail: contact.mail || '',
           contactNumber: contact.contactNumber,
           email: contact.email,
         })
@@ -88,6 +90,10 @@ export default function ContactFormPage() {
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-slate-700">Designation *</span>
               <input value={form.designation} onChange={(event) => handleChange('designation', event.target.value)} placeholder="Designation" className="w-full rounded-lg border border-[#EFECE5] bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700">Mail</span>
+              <input type="email" value={form.mail || ''} onChange={(event) => handleChange('mail', event.target.value)} placeholder="Mail" className="w-full rounded-lg border border-[#C7C7C7] bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]" />
             </label>
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-slate-700">Phone Number *</span>

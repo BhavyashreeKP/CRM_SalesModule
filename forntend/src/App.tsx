@@ -14,6 +14,8 @@ import LeadFormPage from '@/pages/LeadFormPage'
 import LeadDetailsPage from '@/pages/LeadDetailsPage'
 import MailCampaignPage from '@/pages/MailCampaignPage'
 import MailCampaignFormPage from '@/pages/MailCampaignFormPage'
+import MailCampaignPreviewPage from '@/pages/MailCampaignPreviewPage'
+import MailCampaignReportPage from '@/pages/MailCampaignReportPage'
 import CalendarPage from '@/pages/CalendarPage'
 import InventoryPage from '@/pages/InventoryPage'
 import PurchaseOrdersPage from '@/pages/PurchaseOrdersPage'
@@ -28,6 +30,12 @@ import CompanyProfileFormPage from '@/pages/CompanyProfileFormPage'
 import QuotationFormPage from '@/pages/QuotationFormPage'
 import QuotationEditPage from '@/pages/QuotationEditPage'
 import QuotationViewPage from '@/pages/QuotationViewPage'
+import FunnelPage from '@/pages/FunnelPage'
+import OPFPage from '@/pages/OPFPage'
+import OPFGenerateFormPage from '@/pages/OPFGenerateFormPage'
+import OPFViewPage from '@/pages/OPFViewPage'
+import RenewalsPage from '@/pages/RenewalsPage'
+import DataAdminPage from '@/pages/DataAdminPage'
 
 function SalesLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -202,6 +210,10 @@ export default function App() {
           }
         />
         <Route
+          path="/sales/mail-campaign/view/:id"
+          element={<SalesLayout><MailCampaignPreviewPage /></SalesLayout>}
+        />
+        <Route
           path="/sales/inventory"
           element={
             <SalesLayout>
@@ -252,6 +264,46 @@ export default function App() {
           }
         />
         <Route
+          path="/sales/opf"
+          element={
+            <SalesLayout>
+              <OPFPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/opf/new"
+          element={
+            <SalesLayout>
+              <OPFGenerateFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/opf/:id"
+          element={
+            <SalesLayout>
+              <OPFViewPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/opf/edit/:id"
+          element={
+            <SalesLayout>
+              <OPFGenerateFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/renewals"
+          element={
+            <SalesLayout>
+              <RenewalsPage />
+            </SalesLayout>
+          }
+        />
+        <Route
           path="/sales/activities/new"
           element={
             <SalesLayout>
@@ -271,7 +323,7 @@ export default function App() {
           path="/sales/funnels"
           element={
             <SalesLayout>
-              <PlaceholderPage module="Funnels" />
+              <FunnelPage />
             </SalesLayout>
           }
         />
@@ -372,10 +424,14 @@ export default function App() {
           }
         />
         <Route
+          path="/sales/reports/mail-campaigns/:id"
+          element={<SalesLayout><MailCampaignReportPage /></SalesLayout>}
+        />
+        <Route
           path="/sales/reports/mail-campaigns"
           element={
             <SalesLayout>
-              <PlaceholderPage module="Mail Campaign Reports" />
+              <MailCampaignReportPage />
             </SalesLayout>
           }
         />
@@ -392,7 +448,7 @@ export default function App() {
           path="/sales/data-admin"
           element={
             <SalesLayout>
-              <PlaceholderPage module="Data Admin" />
+              <DataAdminPage />
             </SalesLayout>
           }
         />

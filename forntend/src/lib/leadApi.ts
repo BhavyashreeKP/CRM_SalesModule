@@ -155,3 +155,11 @@ export async function triggerMailOpenEvent(payload: Partial<LeadRecord> & { emai
   const response = await axios.post(`${API_BASE_URL}/leads/mailcampaign/open-event`, payload);
   return response.data;
 }
+
+export async function sendQuotationPdf(id: string, pdfData: string, recipientEmail: string) {
+  const response = await axios.post(`${API_BASE_URL}/leads/${id}/send-pdf`, {
+    pdfData,
+    recipientEmail,
+  });
+  return response.data;
+}

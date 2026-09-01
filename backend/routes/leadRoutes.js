@@ -12,6 +12,7 @@ const {
   generateQuotation,
   convertToCustomer,
   scrapLead,
+  sendQuotationPdf,
 } = require('../controllers/leadController');
 
 router.get('/', getLeads);
@@ -24,6 +25,7 @@ router.post('/move-funnel', moveToFunnel);
 router.post('/generate-quotation', generateQuotation);
 router.post('/convert-customer', convertToCustomer);
 router.post('/scrap', scrapLead);
+router.post('/:id/send-pdf', sendQuotationPdf);
 router.post('/mailcampaign/open-event', handleMailOpenEvent);
 
 module.exports = router;

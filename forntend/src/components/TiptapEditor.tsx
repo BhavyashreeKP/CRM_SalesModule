@@ -97,6 +97,7 @@ export function TiptapEditor({ value, onChange, placeholder }: TiptapEditorProps
     editorProps: {
       attributes: {
         class: 'min-h-[240px] px-4 py-3 text-sm text-gray-700 outline-none',
+          style: 'font-family: "Times New Roman", Times, serif; line-height: 1.5;',
       },
     },
     onUpdate: ({ editor }) => {

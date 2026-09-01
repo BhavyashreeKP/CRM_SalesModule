@@ -1,5 +1,19 @@
 const mongoose = require('mongoose');
 
+const campaignGroupSchema = new mongoose.Schema(
+  {
+    groupName: { type: String, default: 'Campaign Group 1' },
+    contactIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Contact', default: [] }],
+    subject: { type: String, default: '' },
+    message: { type: String, default: '' },
+    status: { type: String, default: 'Draft' },
+    recipientEmails: [{ type: String, default: [] }],
+    sentDate: { type: String, default: '' },
+    deliveryResults: [{ recipientEmail: String, status: String, messageId: String, errorMessage: String, sentAt: { type: Date, default: Date.now } }],
+  },
+  { _id: true }
+);
+
 const mailCampaignSchema = new mongoose.Schema(
   {
     campaignId: { type: String, required: true, unique: true },
@@ -27,6 +41,7 @@ const mailCampaignSchema = new mongoose.Schema(
     timezone: { type: String, default: 'UTC' },
     sentDate: { type: String, default: '' },
     testEmail: { type: String, default: '' },
+    campaignGroups: [campaignGroupSchema],
     deliveryResults: [{ recipientEmail: String, status: String, messageId: String, errorMessage: String, sentAt: { type: Date, default: Date.now } }],
     deletedAt: { type: Date, default: null },
   },

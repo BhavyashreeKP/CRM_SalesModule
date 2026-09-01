@@ -17,8 +17,6 @@ const dateOptions = [
   { value: 'last-year', label: 'Last Year' },
   { value: 'custom-date', label: 'Custom Date' },
 ];
-const responseOptions = ['All', 'Positive', 'Negative', 'Pending', 'No Response'];
-
 const DATE_FORMATTER = new Intl.DateTimeFormat('en', { dateStyle: 'medium' });
 
 export default function ActivityPage() {
@@ -32,11 +30,8 @@ export default function ActivityPage() {
   const [loading, setLoading] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<ActivityRecord | null>(null);
   const [createdBy, setCreatedBy] = useState('All');
-  const [activityDatePreset, setActivityDatePreset] = useState('All');
   const [customerName, setCustomerName] = useState('All');
   const [followUpPreset, setFollowUpPreset] = useState('All');
-  const [activityId, setActivityId] = useState('');
-  const [responseFilter, setResponseFilter] = useState('All');
   const [toast, setToast] = useState<string | null>(null);
   const [customerOptions, setCustomerOptions] = useState<string[]>([]);
 
@@ -48,11 +43,7 @@ export default function ActivityPage() {
         limit,
         createdBy: createdBy !== 'All' ? createdBy : '',
         customerName: customerName !== 'All' ? customerName : '',
-        activityDatePreset: activityDatePreset !== 'All' ? activityDatePreset : '',
         followUpPreset: followUpPreset !== 'All' ? followUpPreset : '',
-        response: responseFilter !== 'All' ? responseFilter : '',
-        activityId: activityId || '',
-        search: activityId || '',
         sortBy: 'createdAt',
         sortOrder: 'desc',
       });
@@ -66,7 +57,7 @@ export default function ActivityPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, limit, createdBy, activityDatePreset, customerName, followUpPreset, responseFilter, activityId]);
+  }, [page, limit, createdBy, customerName, followUpPreset]);
 
   useEffect(() => {
     const loadCustomers = async () => {
@@ -168,10 +159,10 @@ export default function ActivityPage() {
   const tableCellClass = 'px-4 py-3 border-r border-[#D1D5DB]';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-serif font-bold text-gray-900">Activity Dashboard</h1>
+          <h1 className="text-4xl font-bold text-gray-900">Activity Dashboard</h1>
           {/* <p className="text-sm text-gray-600">Search, filter, review, and export activity records across the CRM.</p> */}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -188,18 +179,11 @@ export default function ActivityPage() {
       </div>
 
       <div className="rounded-lg border border-[#EFECE5] bg-white p-4 shadow-sm">
-        <div className="grid gap-3 xl:grid-cols-6">
+        <div className="grid gap-3 xl:grid-cols-3">
           <label className="space-y-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Created By</span>
             <select value={createdBy} onChange={(event) => setCreatedBy(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] px-3 py-2.5 text-sm">
               {['All', ...createdByOptions].map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
-
-          <label className="space-y-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Activity Date</span>
-            <select value={activityDatePreset} onChange={(event) => setActivityDatePreset(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] px-3 py-2.5 text-sm">
-              {dateOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
 
@@ -218,42 +202,31 @@ export default function ActivityPage() {
             </select>
           </label>
 
-          <label className="space-y-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Activity ID</span>
-            <input value={activityId} onChange={(event) => setActivityId(event.target.value)} placeholder="ACT-00001" className="w-full rounded-lg border border-[#EFECE5] px-3 py-2.5 text-sm" />
-          </label>
-
-          <label className="space-y-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Response</span>
-            <select value={responseFilter} onChange={(event) => setResponseFilter(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] px-3 py-2.5 text-sm">
-              {responseOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
         </div>
       </div>
 
       <div className="rounded-lg border border-[#EFECE5] bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[#EFECE5] text-sm">
-            <thead className="bg-[#F8F7F3] text-left text-xs font-semibold uppercase tracking-wider text-gray-600">
+            <thead className="bg-[#F8F7F3] text-left text-xs font-semibold tracking-wider text-gray-600">
               <tr>
                 <th className={tableCellClass}>SL No</th>
-                <th className={tableCellClass}>Representative</th>
-                <th className={tableCellClass}>Activity ID</th>
-                <th className={tableCellClass}>Company</th>
-                <th className={tableCellClass}>Activity Type</th>
-                <th className={tableCellClass}>Activity Date</th>
+                <th className={tableCellClass}>REPRESENTATIVE</th>
+                <th className={tableCellClass}>ACTIVITY ID</th>
+                <th className={tableCellClass}>COMPANY</th>
+                <th className={tableCellClass}>ACTIVITY TYPE</th>
+                <th className={tableCellClass}>ACTIVITY DATE</th>
                 {/* <th className={tableCellClass}>Activity Time</th> */}
-                <th className={tableCellClass}>Follow-up Date</th>
+                <th className={tableCellClass}>FOLLOW-UP DATE</th>
                 {/* <th className={tableCellClass}>Follow-up Time</th> */}
-                <th className={tableCellClass}>Product</th>
-                <th className={tableCellClass}>Requirements</th>
-                <th className={tableCellClass}>Remarks</th>
-                <th className={tableCellClass}>Contact Person</th>
-                <th className={tableCellClass}>Contact Mail</th>
-                <th className={tableCellClass}>Contact Mobile</th>
-                <th className={tableCellClass}>Activity Status</th>
-                <th className="px-4 py-3">Actions</th>
+                <th className={tableCellClass}>PRODUCT</th>
+                <th className={tableCellClass}>REQUIREMENTS</th>
+                <th className={tableCellClass}>REMARKS</th>
+                <th className={tableCellClass}>CONTACT PERSON</th>
+                <th className={tableCellClass}>CONTACT MAIL</th>
+                <th className={tableCellClass}>CONTACT MOBILE</th>
+                <th className={tableCellClass}>ACTIVITY STATUS</th>
+                <th className="px-4 py-3">ACTIONS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EFECE5] bg-white text-gray-700">
@@ -328,7 +301,7 @@ export default function ActivityPage() {
               <button type="button" onClick={() => setSelectedActivity(null)} className="inline-flex items-center gap-2 rounded-lg px-2 py-1 text-sm font-medium text-gray-700 transition hover:bg-[#F2EFE8]">
                 <ArrowLeft className="h-4 w-4" /> Back
               </button>
-              <h3 className="text-base font-serif font-bold text-gray-900">Activity Details</h3>
+              <h3 className="text-base font-bold text-gray-900">Activity Details</h3>
               <button type="button" onClick={() => setSelectedActivity(null)} className="rounded-lg p-2 text-gray-500 hover:bg-[#F2EFE8] hover:text-gray-800" aria-label="Close details drawer">
                 <X className="h-4 w-4" />
               </button>

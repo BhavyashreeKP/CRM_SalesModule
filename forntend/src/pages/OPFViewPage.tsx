@@ -1,0 +1,340 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Pencil, Printer, Send } from 'lucide-react'
+import html2pdf from 'html2pdf.js'
+import { Toast } from '@/components/toast'
+import { fetchCompanyProfiles, type CompanyProfileRecord } from '@/lib/companyProfileApi'
+import { fetchCustomerById, type CustomerApiRecord } from '@/lib/customerApi'
+import { fetchLeads, type LeadRecord } from '@/lib/leadApi'
+import { fetchOPFById, sendOPFPdf, type OPFRecord } from '@/lib/opfApi'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
+
+const formatDate = (value?: string | null) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString('en-GB')
+}
+
+const formatCurrency = (value?: number | string) => {
+  const numeric = Number(value ?? 0)
+  if (!Number.isFinite(numeric)) return '₹0'
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(numeric)
+}
+
+const taxDetails = (tax?: string) => {
+  const match = tax?.match(/(\d+(?:\.\d+)?)%/)
+  const percentage = match ? Number(match[1]) : 0
+  return { percentage, isCGST: tax?.includes('CGST + SGST') ?? false }
+}
+
+const calculateGST = (subtotal: number, tax?: string) => {
+  const { percentage, isCGST } = taxDetails(tax)
+  const totalGST = subtotal * percentage / 100
+  return { cgst: isCGST ? totalGST / 2 : 0, sgst: isCGST ? totalGST / 2 : 0, igst: isCGST ? 0 : totalGST, totalGST }
+}
+
+const numberToWords = (value: number): string => {
+  const ones = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+  if (value < 20) return ones[value]
+  if (value < 100) return `${tens[Math.floor(value / 10)]}${value % 10 ? ` ${ones[value % 10]}` : ''}`
+  if (value < 1000) return `${ones[Math.floor(value / 100)]} Hundred${value % 100 ? ` and ${numberToWords(value % 100)}` : ''}`
+  if (value < 100000) return `${numberToWords(Math.floor(value / 1000))} Thousand${value % 1000 ? ` ${numberToWords(value % 1000)}` : ''}`
+  if (value < 10000000) return `${numberToWords(Math.floor(value / 100000))} Lakh${value % 100000 ? ` ${numberToWords(value % 100000)}` : ''}`
+  return `${numberToWords(Math.floor(value / 10000000))} Crore${value % 10000000 ? ` ${numberToWords(value % 10000000)}` : ''}`
+}
+
+const resolveImageUrl = (filePath?: string) => {
+  if (!filePath) return ''
+  if (/^https?:\/\//i.test(filePath)) return filePath
+  const base = (import.meta.env.VITE_API_URL || 'http://localhost:5001/api').replace(/\/api$/, '')
+  return `${base}${filePath}`
+}
+
+export default function OPFViewPage() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { id } = useParams<{ id: string }>()
+  const printRef = useRef<HTMLDivElement | null>(null)
+  const [opf, setOPF] = useState<OPFRecord | null>(null)
+  const [company, setCompany] = useState<CompanyProfileRecord | null>(null)
+  const [customer, setCustomer] = useState<CustomerApiRecord | null>(null)
+  const [quotation, setQuotation] = useState<LeadRecord | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSending, setIsSending] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    const message = (location.state as { message?: string } | null)?.message
+    if (message) {
+      setToast(message)
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.pathname, location.state, navigate])
+
+  useEffect(() => {
+    const load = async () => {
+      if (!id) return
+      try {
+        const data = await fetchOPFById(id)
+        if (!data) throw new Error('OPF not found')
+        setOPF(data)
+        const [profileResponse, quotationResponse] = await Promise.all([
+          fetchCompanyProfiles({ limit: 1 }),
+          fetchLeads({ status: 'Proposal Sent', limit: 1000 }),
+        ])
+        setCompany(profileResponse.data?.[0] || null)
+        setQuotation(quotationResponse.data.find((lead) =>
+          lead.quotationId === data.quotationId || lead.quotationId === data.quotationNumber
+        ) || null)
+        if (data.customerId) {
+          const customerResponse = await fetchCustomerById(data.customerId)
+          setCustomer(customerResponse.data || customerResponse)
+        }
+      } catch (error) {
+        setToast(error instanceof Error ? error.message : 'Failed to load OPF')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    void load()
+  }, [id])
+
+  if (isLoading) return <div className="py-8 text-center text-gray-500">Loading OPF details...</div>
+  if (!opf || !id) return <div className="py-8 text-center text-gray-500">OPF not found.</div>
+
+  const quantity = Number(opf.quantity) || 0
+  const customerSubtotal = quantity * (Number(opf.unitPrice) || 0)
+  const vendorSubtotal = quantity * (Number(opf.vendorPrice) || 0)
+  const customerGST = calculateGST(customerSubtotal, opf.tax)
+  const vendorGST = calculateGST(vendorSubtotal, opf.tax)
+  const customerTotal = customerSubtotal + customerGST.totalGST
+  const vendorTotal = vendorSubtotal + vendorGST.totalGST
+  const gp = customerSubtotal - vendorSubtotal
+  const logoUrl = resolveImageUrl(company?.companyLogo?.filePath)
+  const quotationProduct = quotation?.products?.[0]
+  const customerName = quotation?.companyName || opf.customerName
+  const product = quotationProduct?.productName || opf.product
+  const description = quotationProduct?.productDescription || opf.description
+
+  const handleSendPdf = async () => {
+    if (!printRef.current) return
+    const recipient = opf.enduserEmail || window.localStorage.getItem('userEmail') || ''
+    if (!recipient) {
+      setToast('No recipient email is available for this OPF')
+      return
+    }
+    setIsSending(true)
+    try {
+      const pdfData = await html2pdf().set({
+        margin: 0,
+        filename: `opf-${opf.opfNo || id}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
+      }).from(printRef.current).outputPdf('datauristring')
+      const response = await sendOPFPdf(id, pdfData, recipient)
+      setToast(response.message || 'OPF PDF sent successfully')
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Failed to send OPF PDF')
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const handlePrint = () => window.print()
+
+  return (
+    <div className="opf-view-root space-y-6">
+      <style>{`
+        .opf-page {
+          width: calc(210mm - 12mm);
+          margin: 6mm auto;
+          box-sizing: border-box;
+          --opf-inset: 10px;
+          padding: 5mm;
+          border: 0.5px solid #555 !important;
+          background: #fff;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: 10px;
+        }
+        .opf-header { position: relative; display: flex; min-height: 68px; align-items: center; justify-content: center; border-bottom: 1px solid #333; }
+        .opf-header h1 { margin: 0; font-size: 20px; font-weight: 700; text-transform: uppercase; }
+        .opf-header img { position: absolute; right: 0; max-width: 190px; height: 58px; object-fit: contain; }
+        .opf-meta { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1.35fr; gap: 8px; border-bottom: 0.5px solid #333; margin: 0 calc(var(--opf-inset) * -1); padding: 7px var(--opf-inset); }
+        .opf-meta > div { min-width: 0; }
+        .opf-section { margin-top: 13px; }
+        .opf-section h3 { margin: 0 0 4px; font-size: 12px; font-weight: 700; }
+        .opf-table { width: 100%; border: 0.5px solid #333; border-collapse: collapse; border-spacing: 0; table-layout: fixed; font-size: 9px; }
+        .opf-table th, .opf-table td { border: 0.5px solid #333; padding: 4px 5px; overflow-wrap: anywhere; vertical-align: top; }
+        .opf-table th { font-weight: 700; text-align: center; vertical-align: middle; }
+        .opf-table .opf-number { text-align: right; white-space: nowrap; }
+         { padding: 0 !important; height: 100%; }
+          .opf-gst-cell {
+  position: relative;
+  padding: 0 !important;
+}
+        .opf-gst {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  align-items: stretch;
+  overflow: hidden;
+  background: #fff;
+  position: absolute;
+  inset: 0;
+}
+        .opf-gst > div {
+          min-width: 0;
+          min-height: 100%;
+          display: flex;
+          flex-direction: column;
+          align-self: stretch;
+        }
+        .opf-gst > div:first-child { border-right: 0.5px solid #333; }
+        .opf-gst-label { padding: 2px 4px 0; font-size: 8px; font-weight: 700; text-align: center; white-space: nowrap; }
+        .opf-gst-line { border-top: 1px dashed #333; margin: 3px 8px 0; }
+        .opf-gst-value { padding: 3px 4px 2px; font-size: 8px; text-align: center; white-space: nowrap; }
+        .opf-bottom {
+          display: grid;
+          grid-template-columns: minmax(0, 4fr) minmax(0, 1fr);
+          margin-top: 13px;
+          border: none;
+          font-size: 10px;
+          line-height: 1.5;
+        }
+        .opf-bottom-details { padding: 7px 14px 7px 0; }
+        .opf-signature {
+          display: flex;
+          min-height: 190px;
+          align-items: flex-end;
+          justify-content: center;
+          border-left: 0.5px solid #333;
+          padding: 12px;
+          text-align: center;
+          font-weight: 700;
+        }
+        @media (max-width: 720px) {
+          .opf-page { width: calc(100% - 32px); min-height: 0; --opf-inset: 6px; padding: var(--opf-inset); font-size: 7px; }
+          .opf-header { min-height: 48px; }
+          .opf-header h1 { font-size: 10px; }
+          .opf-header img { max-width: 78px; height: 34px; }
+          .opf-meta { gap: 3px; padding-top: 3px; padding-bottom: 3px; font-size: 6px; }
+          .opf-section { margin-top: 5px; }
+          .opf-section h3 { margin-bottom: 2px; font-size: 7px; }
+          .opf-table { font-size: 6px; }
+          .opf-table th, .opf-table td { padding: 2px 1px; }
+          .opf-gst-label, .opf-gst-value { font-size: 5.5px; }
+          .opf-gst-line { margin-top: 2px; }
+          .opf-bottom { grid-template-columns: minmax(0, 4fr) minmax(0, 1fr); margin-top: 5px; font-size: 6px; line-height: 1.25; }
+          .opf-bottom-details { padding: 4px 6px 4px 0; }
+          .opf-signature { min-height: 105px; padding: 5px; }
+        }
+        @media print {
+          @page { size: A4; margin: 0; }
+          html, body.opf-gst-cell { width: 210mm !important; height: 297mm !important; margin: 0 !important; padding: 0 !important; background: #fff !important; overflow: hidden !important; }
+          body * { visibility: hidden !important; }
+          .h-screen, .h-screen * { visibility: hidden !important; }
+          .h-screen > .fixed.inset-x-0.top-0,
+          .h-screen > div > .shrink-0,
+          .h-screen > .fixed.inset-x-0.top-0 *,
+          .h-screen > div > .shrink-0 * { display: none !important; }
+          .opf-print-area, .opf-print-area * { visibility: visible !important; }
+          body > * { width: 210mm !important; min-width: 210mm !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+          .opf-view-root { position: static !important; width: 210mm !important; min-width: 210mm !important; margin: 0 !important; padding: 0 !important; }
+          .no-print { display: none !important; }
+          button, [role="alert"] { display: none !important; }
+          .opf-print-area { display: block !important; position: absolute !important; left: 6mm !important; top: 6mm !important; width: calc(210mm - 12mm) !important; min-width: 0 !important; max-width: none !important; min-height: 0 !important; margin: 0 !important; padding: 5mm !important; box-sizing: border-box !important; transform: none !important; zoom: 1 !important; background: #fff !important; overflow: hidden !important; }
+          .opf-print-area .opf-header { position: relative !important; display: flex !important; min-height: 68px !important; align-items: center !important; justify-content: center !important; border-bottom: 1px solid #333 !important; }
+          .opf-print-area .opf-header h1 { margin: 0 !important; text-align: center !important; }
+          .opf-print-area .opf-header img { position: absolute !important; top: 5px !important; right: 5px !important; }
+        }
+      `}</style>
+      <button type="button" onClick={() => navigate('/sales/opf')} className="no-print inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:underline"><ArrowLeft className="h-4 w-4" /> Back to OPF</button>
+      <div className="no-print flex items-center justify-between">
+        <div />
+        <div className="flex gap-3">
+          <button type="button" onClick={() => navigate(`/sales/opf/edit/${id}`)} className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2.5 text-sm font-medium text-white"><Pencil className="h-4 w-4" /> EDIT</button>
+          <button type="button" onClick={handlePrint} className="no-print inline-flex items-center gap-2 rounded-lg border border-[#2563EB] bg-white px-4 py-2.5 text-sm font-medium text-[#2563EB]"><Printer className="h-4 w-4" /> PRINT</button>
+          <button type="button" disabled={isSending} onClick={handleSendPdf} className="inline-flex items-center gap-2 rounded-lg border border-[#2563EB] bg-white px-4 py-2.5 text-sm font-medium text-[#2563EB] disabled:opacity-50"><Send className="h-4 w-4" /> View &amp; Send PDF</button>
+        </div>
+      </div>
+
+      <div ref={printRef} className="opf-page opf-print-area mx-auto bg-white text-black">
+        <header className="opf-header">
+          <h1>Order Processing Format</h1>
+          {logoUrl && <img src={logoUrl} alt="Synov logo" />}
+        </header>
+
+        <section className="opf-meta">
+          <Detail label="Quot No" value={opf.quotationNumber || quotation?.quotationId} />
+          <Detail label="PO No" value={opf.customerPONo} />
+          <Detail label="OPF No" value={opf.opfNo} />
+          <Detail label="OPF Date" value={formatDate(opf.createdDate)} />
+          <Detail label="Created By Sales Rep" value={opf.createdBy} />
+        </section>
+
+        <DataTable title="Customer Details" name={customerName} product={product} description={description} partNo={opf.partNo} quantity={quantity} unitPrice={Number(opf.unitPrice) || 0} tax={opf.tax} subtotal={customerSubtotal} gst={customerGST} total={customerTotal} />
+        <VendorDataTable name={opf.supplierName} product={product} description={description} partNo={opf.partNo} quantity={quantity} unitPrice={Number(opf.vendorPrice) || 0} tax={opf.tax} subtotal={vendorSubtotal} gst={vendorGST} total={vendorTotal} gp={gp} gpPercentage={vendorSubtotal ? (gp / vendorSubtotal) * 100 : 0} />
+
+        <section className="opf-bottom">
+          <div className="opf-bottom-details">
+            <Detail label="GP in Words" value={`${numberToWords(Math.abs(Math.round(gp)))} Rupee Only`} />
+            <Detail label="PO No" value={opf.customerPONo} />
+            <Detail label="PO Date" value={formatDate(opf.customerPODate)} />
+            <Detail label="ETA" value={formatDate(opf.eta)} />
+            <Detail label="Enduser Name" value={opf.enduserName} />
+            <Detail label="Enduser Email" value={opf.enduserEmail} />
+            <Detail label="Enduser Contact" value={opf.enduserContact} />
+            <Detail label="Enduser Address" value={opf.enduserAddress} />
+            <Detail label="Customer GST No." value={customer?.gstNumber} />
+            <Detail label="Customer Payment Terms" value={opf.customerPaymentTerms} />
+            <Detail label="Supplier Payment Terms" value={opf.supplierPaymentTerms} />
+            <Detail label="Bill To Address" value={opf.billToAddress} />
+            <Detail label="Ship To Address" value={opf.shipToAddress} />
+          </div>
+          <div className="opf-signature">Authorised Signatory</div>
+        </section>
+      </div>
+      {toast && <div className="no-print"><Toast message={toast} type={toast.includes('success') ? 'success' : 'error'} onClose={() => setToast(null)} /></div>}
+    </div>
+  )
+}
+
+function Detail({ label, value }: { label: string; value?: string | number | null }) {
+  return <div><span className="font-semibold">{label}: </span>{value || '-'}</div>
+}
+
+function GstCell({ tax, gst }: { tax?: string; gst: { cgst: number; sgst: number; igst: number; totalGST: number } }) {
+  const halfTaxPercentage = taxDetails(tax).percentage / 2
+  return (
+    <div className="opf-gst">
+      <div>
+        <div className="opf-gst-label">CGST {halfTaxPercentage}%</div>
+        <div className="opf-gst-line" />
+        <div className="opf-gst-value">{formatCurrency(gst.cgst)}</div>
+      </div>
+      <div>
+        <div className="opf-gst-label">SGST {halfTaxPercentage}%</div>
+        <div className="opf-gst-line" />
+        <div className="opf-gst-value">{formatCurrency(gst.sgst)}</div>
+      </div>
+    </div>
+  )
+}
+
+function VendorDataTable({ name, product, description, partNo, quantity, unitPrice, tax, subtotal, gst, total, gp, gpPercentage }: { name?: string; product?: string; description?: string; partNo?: string; quantity: number; unitPrice: number; tax?: string; subtotal: number; gst: { cgst: number; sgst: number; igst: number; totalGST: number }; total: number; gp: number; gpPercentage: number }) {
+  return <section className="opf-section"><h3>Vendor/Supplier Details</h3><OPFTable nameLabel="Vendor Name" name={name} product={product} description={description} partNo={partNo} quantity={quantity} unitPrice={unitPrice} tax={tax} subtotal={subtotal} gst={gst} total={total} footer={<><tr className="font-semibold"><td colSpan={6} /><td>Grand Total</td><td className="opf-number">{formatCurrency(subtotal)}</td><td className="opf-number">{formatCurrency(gst.totalGST)}</td><td className="opf-number">{formatCurrency(total)}</td></tr><tr className="font-semibold"><td colSpan={8} /><td>GP</td><td className="opf-number">{formatCurrency(gp)}</td></tr><tr className="font-semibold"><td colSpan={8} /><td>GP %</td><td className="opf-number">{gpPercentage.toFixed(2)}%</td></tr></>} /></section>
+}
+
+function DataTable({ title, name, product, description, partNo, quantity, unitPrice, tax, subtotal, gst, total }: { title: string; name?: string; product?: string; description?: string; partNo?: string; quantity: number; unitPrice: number; tax?: string; subtotal: number; gst: { cgst: number; sgst: number; igst: number; totalGST: number }; total: number }) {
+  const nameLabel = title.startsWith('Vendor') ? 'Vendor Name' : 'Customer Name'
+  return <section className="opf-section"><h3>{title}</h3><OPFTable nameLabel={nameLabel} name={name} product={product} description={description} partNo={partNo} quantity={quantity} unitPrice={unitPrice} tax={tax} subtotal={subtotal} gst={gst} total={total} footer={<tr className="font-semibold"><td colSpan={7} className="text-right">Grand Total</td><td className="opf-number">{formatCurrency(subtotal)}</td><td className="opf-number">{formatCurrency(gst.totalGST)}</td><td className="opf-number">{formatCurrency(total)}</td></tr>} /></section>
+}
+
+function OPFTable({ nameLabel, name, product, description, partNo, quantity, unitPrice, tax, subtotal, gst, total, footer }: { nameLabel: string; name?: string; product?: string; description?: string; partNo?: string; quantity: number; unitPrice: number; tax?: string; subtotal: number; gst: { cgst: number; sgst: number; igst: number; totalGST: number }; total: number; footer: React.ReactNode }) {
+  return <table className="opf-table"><colgroup><col style={{ width: '4%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /><col style={{ width: '16%' }} /><col style={{ width: '7%' }} /><col style={{ width: '5%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '16%' }} /><col style={{ width: '8%' }} /></colgroup><thead><tr><th>Sl. No.</th><th>{nameLabel}</th><th>Product</th><th>Description</th><th>Part No.</th><th>Qty</th><th>Unit Price(INR)</th><th>Sub Total(INR)</th><th>GST (INR)</th><th>Total Price(INR)</th></tr></thead><tbody><tr><td className="text-center">1</td><td>{name || '-'}</td><td>{product || '-'}</td><td>{description || '-'}</td><td>{partNo || '-'}</td><td className="text-center">{quantity}</td><td className="opf-number">{formatCurrency(unitPrice)}</td><td className="opf-number">{formatCurrency(subtotal)}</td><td className="opf-gst-cell"><GstCell tax={tax} gst={gst} />{gst.igst ? <div className="mt-2 text-center">IGST {formatCurrency(gst.igst)}</div> : null}</td><td className="opf-number font-semibold">{formatCurrency(total)}</td></tr>{footer}</tbody></table>
+}

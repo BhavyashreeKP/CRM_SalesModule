@@ -14,7 +14,8 @@
     "mongoose": "^8.5.0",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
-    "sanitize-html": "^2.17.6"
+    "sanitize-html": "^2.17.6",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

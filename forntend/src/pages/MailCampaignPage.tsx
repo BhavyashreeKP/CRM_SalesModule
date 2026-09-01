@@ -2,33 +2,24 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Download, Search, Eye, Pencil, Trash2, Copy, Mail, FileText, Clock3, Send, CheckCircle2, AlertCircle, Layers3 } from 'lucide-react'
+import { Plus, Download, Search, Mail, FileText, Clock3, Send, Trash2 } from 'lucide-react'
 import { StatCard } from '@/components/stat-card'
-import { getCampaigns, deleteCampaign, MailCampaignRecord } from '@/lib/mailCampaignApi'
-
-const statusColors: Record<string, string> = {
-  Draft: 'bg-gray-100 text-gray-700',
-  Scheduled: 'bg-amber-100 text-amber-700',
-  Sending: 'bg-blue-100 text-blue-700',
-  Sent: 'bg-green-100 text-green-700',
-  Failed: 'bg-red-100 text-red-700',
-  Trash: 'bg-slate-100 text-slate-700',
-}
+import { deleteCampaign, getCampaigns, MailCampaignRecord } from '@/lib/mailCampaignApi'
 
 export default function MailCampaignPage() {
   const navigate = useNavigate()
   const [campaigns, setCampaigns] = useState<MailCampaignRecord[]>([])
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('')
-  const [recipientGroup, setRecipientGroup] = useState('')
-  const [createdBy, setCreatedBy] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+  const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
 
   const loadCampaigns = async (nextPage = page, nextLimit = pageSize) => {
-    const data = await getCampaigns({ search, status, recipientGroup, createdBy, page: nextPage, limit: nextLimit })
+    const data = await getCampaigns({ search, page: nextPage, limit: nextLimit })
     setCampaigns(data.data || [])
     setTotalPages(data.pagination?.totalPages || 1)
     setTotalCount(data.pagination?.total || 0)
@@ -39,7 +30,7 @@ export default function MailCampaignPage() {
       void loadCampaigns(1, pageSize)
     }, 200)
     return () => window.clearTimeout(timer)
-  }, [search, status, recipientGroup, createdBy, pageSize])
+  }, [search, pageSize])
 
   useEffect(() => {
     void loadCampaigns(page, pageSize)
@@ -52,12 +43,28 @@ export default function MailCampaignPage() {
     sent: campaigns.filter((item) => item.status === 'Sent').length,
   }), [campaigns])
 
-  const tableCellClass = 'px-3 py-3 border-r border-[#D1D5DB]'
+  const tableCellClass = 'border border-[#E5E7EB] px-3 py-2.5 align-middle'
+  const formatDate = (value?: string) => {
+    if (!value) return '—'
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })
+  }
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Move this campaign to trash?')) return
-    await deleteCampaign(id)
-    void loadCampaigns()
+  const handleDelete = async (campaign: MailCampaignRecord) => {
+    if (!window.confirm('Are you sure you want to delete this campaign?')) return
+    setDeletingCampaignId(campaign.campaignId)
+    setMessage('')
+    setError('')
+    try {
+      await deleteCampaign(campaign.campaignId)
+      setCampaigns((current) => current.filter((item) => item.campaignId !== campaign.campaignId))
+      setTotalCount((current) => Math.max(current - 1, 0))
+      setMessage('Campaign deleted successfully.')
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete campaign.')
+    } finally {
+      setDeletingCampaignId(null)
+    }
   }
 
   return (
@@ -86,82 +93,56 @@ export default function MailCampaignPage() {
       </div>
 
       <div className="rounded-xl border border-[#EFECE5] bg-white p-6 shadow-sm">
-        <div className="mb-6 grid gap-4 lg:grid-cols-5">
-          <div className="lg:col-span-2">
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Search Campaign Name</label>
+        <div className="mb-6">
+          <div className="max-w-xl">
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Search Campaign</label>
             <div className="flex items-center gap-2 rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2">
               <Search className="h-4 w-4 text-gray-400" />
               <input value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent text-sm outline-none" placeholder="Search campaign" />
             </div>
           </div>
-          <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Campaign Status</label>
-            <select value={status} onChange={(event) => setStatus(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none">
-              <option value="">All</option>
-              <option value="Draft">Draft</option>
-              <option value="Scheduled">Scheduled</option>
-              <option value="Sending">Sending</option>
-              <option value="Sent">Sent</option>
-              <option value="Failed">Failed</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Recipient Group</label>
-            <select value={recipientGroup} onChange={(event) => setRecipientGroup(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none">
-              <option value="">All</option>
-              <option value="Customers">Customers</option>
-              <option value="Contacts">Contacts</option>
-              <option value="Suppliers">Suppliers</option>
-              <option value="Leads">Leads</option>
-              <option value="Employees">Employees</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Created By</label>
-            <input value={createdBy} onChange={(event) => setCreatedBy(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none" placeholder="Name" />
-          </div>
         </div>
+        {message ? <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{message}</div> : null}
+        {error ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
         <div className="overflow-x-auto">
           {campaigns.length === 0 ? (
             <div className="rounded-lg border border-dashed border-[#EFECE5] bg-[#FAF8F2] px-6 py-12 text-center text-sm text-gray-500">No campaigns found.</div>
           ) : (
-          <table className="min-w-full text-sm">
+          <table className="w-full min-w-[900px] border-separate border-spacing-0 overflow-hidden rounded-lg border border-[#E5E7EB] text-sm">
             <thead>
-              <tr className="border-b border-[#EFECE5] bg-[#F2EFE8] text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                <th className={tableCellClass}>Campaign ID</th>
-                <th className={tableCellClass}>Campaign Name</th>
-                <th className={tableCellClass}>Subject</th>
-                <th className={tableCellClass}>Recipient Group</th>
-                <th className={tableCellClass}>Created By</th>
-                <th className={tableCellClass}>Created Date</th>
-                <th className={tableCellClass}>Scheduled Date</th>
-                <th className={tableCellClass}>Status</th>
-                <th className={tableCellClass}>Opens</th>
-                <th className={tableCellClass}>Clicks</th>
-                <th className={tableCellClass}>Action</th>
+              <tr className="bg-[#F2EFE8] text-left text-xs font-semibold uppercase tracking-wider text-gray-700">
+                <th className={`${tableCellClass} w-[7%] text-center`}>Sl No.</th>
+                <th className={`${tableCellClass} w-[12%]`}>Campaign ID</th>
+                <th className={`${tableCellClass} w-[20%]`}>Campaign Name</th>
+                <th className={`${tableCellClass} w-[25%]`}>Date</th>
+                <th className={`${tableCellClass} w-[9%] text-center`}>View Template</th>
+                <th className={`${tableCellClass} w-[9%] text-center`}>View Report</th>
+                <th className={`${tableCellClass} w-[7%] text-center`}>Opens (Total)</th>
+                <th className={`${tableCellClass} w-[6%] text-center`}>Clicks (Total)</th>
+                <th className={`${tableCellClass} w-[8%] text-center`}>Delete</th>
               </tr>
             </thead>
             <tbody>
-              {campaigns.map((campaign) => (
-                <tr key={campaign._id} className="border-b border-gray-100 last:border-0">
+              {campaigns.map((campaign, index) => (
+                <tr key={campaign._id} className="hover:bg-[#FAF8F2]">
+                  <td className={`${tableCellClass} text-center font-medium text-gray-900`}>{(page - 1) * pageSize + index + 1}</td>
                   <td className={`${tableCellClass} font-medium text-gray-900`}>{campaign.campaignId}</td>
-                  <td className={`${tableCellClass}`}>{campaign.campaignName}</td>
-                  <td className={`${tableCellClass}`}>{campaign.subject}</td>
-                  <td className={`${tableCellClass}`}>{campaign.recipientGroup.join(', ')}</td>
-                  <td className={`${tableCellClass}`}>{campaign.createdBy}</td>
-                  <td className={`${tableCellClass}`}>{campaign.createdDate}</td>
-                  <td className={`${tableCellClass}`}>{campaign.scheduledDate || '—'}</td>
-                  <td className={`${tableCellClass}`}><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[campaign.status] || statusColors.Draft}`}>{campaign.status}</span></td>
-                  <td className={`${tableCellClass}`}>{campaign.opens}</td>
-                  <td className={`${tableCellClass}`}>{campaign.clicks}</td>
-                  <td className={tableCellClass}>
-                    <div className="flex items-center gap-2">
-                      <button className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="View"><Eye className="h-4 w-4" /></button>
-                      <button onClick={() => navigate(`/sales/mail-campaign/edit/${campaign._id}`)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Edit"><Pencil className="h-4 w-4" /></button>
-                      <button onClick={() => handleDelete(campaign._id)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" title="Delete"><Trash2 className="h-4 w-4" /></button>
-                      <button className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Duplicate"><Copy className="h-4 w-4" /></button>
-                    </div>
+                  <td className={tableCellClass}>{campaign.campaignName}</td>
+                  <td className={`${tableCellClass} whitespace-nowrap`}>{formatDate(campaign.createdDate || campaign.createdAt)}</td>
+                  <td className={`${tableCellClass} text-center`}>
+                    <button type="button" onClick={() => navigate(`/sales/mail-campaign/view/${campaign._id}`)} className="rounded bg-[#2563EB] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#1D4ED8]">View</button>
+                  </td>
+                  <td className={`${tableCellClass} text-center`}>
+                    <button type="button" onClick={() => navigate(`/sales/reports/mail-campaigns/${campaign._id}`)} className="rounded bg-[#2563EB] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#1D4ED8]">Report</button>
+                  </td>
+                  <td className={`${tableCellClass} text-center`}>{campaign.opens}</td>
+                  <td className={`${tableCellClass} text-center`}>{campaign.clicks}</td>
+                  <td className={`${tableCellClass} text-center`}>
+                    <button type="button" onClick={() => void handleDelete(campaign)} disabled={deletingCampaignId === campaign.campaignId} className="inline-flex items-center gap-1 rounded bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60" aria-label={`Delete ${campaign.campaignName}`}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {deletingCampaignId === campaign.campaignId ? 'Deleting...' : 'Delete'}
+                    </button>
                   </td>
                 </tr>
               ))}

@@ -1,6 +1,8 @@
 const Lead = require('../models/Lead');
 const CompanyProfile = require('../models/CompanyProfile');
+const Counter = require('../models/Counter');
 const { DEFAULT_PAGE_SIZE, parsePagination, normalizeSort, regexFromSearch, escapeRegex } = require('../utils/queryUtils');
+const { sendQuotationEmail } = require('../services/emailService');
 
 const PRIORITY_BY_SCORE = (score) => {
   if (score > 80) return 'High';
@@ -18,8 +20,31 @@ const buildTimeline = (title, description, type = 'info') => ({
 });
 
 const createLeadId = async () => {
-  const count = await Lead.countDocuments();
-  return `LD-${String(count + 1).padStart(4, '0')}`;
+  const existingLeadIds = await Lead.find({ leadId: /^LD-\d+$/ }, { leadId: 1 }).lean();
+  const highestExistingId = existingLeadIds.reduce((highest, lead) => {
+    const numericPart = String(lead.leadId).slice(3);
+    if (numericPart.length === 6) return highest;
+    const sequence = Number(numericPart);
+    return Number.isSafeInteger(sequence) ? Math.max(highest, sequence) : highest;
+  }, 0);
+
+  await Counter.findOneAndUpdate(
+    { name: 'leadIdSequence' },
+    { $max: { value: highestExistingId } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  const counter = await Counter.findOneAndUpdate(
+    { name: 'leadIdSequence' },
+    { $inc: { value: 1 } },
+    { new: true }
+  );
+
+  if (!counter || !Number.isSafeInteger(counter.value)) {
+    throw new Error('Failed to generate Lead ID sequence.');
+  }
+
+  return `LD-${counter.value}`;
 };
 
 // Calculate Indian financial year (April 1 - March 31)
@@ -123,7 +148,6 @@ const setLeadMetadata = (lead) => {
   lead.sourceOfLead = lead.sourceOfLead || lead.source || 'Manual';
   lead.source = lead.source || lead.sourceOfLead || 'Manual';
   if (!lead.leadStatus) lead.leadStatus = 'New';
-  if (!lead.leadId) lead.leadId = `LD-${Date.now().toString().slice(-6)}`;
   return lead;
 };
 
@@ -225,7 +249,7 @@ exports.createLead = async (req, res) => {
   try {
     const payload = normalizeLeadPayload(req.body);
     const leadPayload = setLeadMetadata({ ...payload, createdBy: payload.createdBy || 'System' });
-    if (!leadPayload.leadId) leadPayload.leadId = await createLeadId();
+    leadPayload.leadId = await createLeadId();
     
     // Generate quotation ID if this is a quotation
     if (payload.leadStatus === 'Proposal Sent' && !leadPayload.quotationId) {
@@ -468,5 +492,89 @@ exports.scrapLead = async (req, res) => {
     res.status(200).json({ success: true, message: 'Lead scrapped', data: lead });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.sendQuotationPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { pdfData, recipientEmail } = req.body;
+
+    // Validate inputs
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Quotation ID is required' });
+    }
+
+    if (!pdfData) {
+      return res.status(400).json({ success: false, message: 'PDF data is required' });
+    }
+
+    if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail.trim())) {
+      return res.status(400).json({ success: false, message: 'Valid recipient email is required' });
+    }
+
+    // Fetch quotation
+    const lead = await Lead.findById(id);
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Quotation not found' });
+    }
+
+    // Convert base64 PDF data to buffer
+    let pdfBuffer;
+    try {
+      // Handle different PDF data formats
+      if (typeof pdfData === 'string') {
+        // If it's base64, decode it
+        if (pdfData.startsWith('data:application/pdf;base64,')) {
+          pdfBuffer = Buffer.from(pdfData.split(',')[1], 'base64');
+        } else if (pdfData.startsWith('base64,')) {
+          pdfBuffer = Buffer.from(pdfData.split(',')[1], 'base64');
+        } else {
+          pdfBuffer = Buffer.from(pdfData, 'base64');
+        }
+      } else {
+        return res.status(400).json({ success: false, message: 'Invalid PDF data format' });
+      }
+    } catch (error) {
+      return res.status(400).json({ success: false, message: 'Failed to process PDF data', error: error.message });
+    }
+
+    // Generate PDF filename with quotation reference
+    const quotationRef = lead.quotationId || lead.leadId || lead._id;
+    const pdfFileName = `quotation-${quotationRef}.pdf`;
+
+    // Send email with PDF
+    const emailResult = await sendQuotationEmail({
+      recipient: recipientEmail.trim(),
+      subject: `Quotation ${quotationRef}`,
+      quotationNumber: quotationRef,
+      pdfBuffer,
+      pdfFileName,
+    });
+
+    if (emailResult.success) {
+      res.status(200).json({
+        success: true,
+        message: emailResult.message,
+        data: {
+          quotationId: id,
+          recipient: recipientEmail,
+          fileName: pdfFileName,
+          messageId: emailResult.messageId,
+        },
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: emailResult.message,
+        error: emailResult.errorMessage,
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send quotation PDF',
+      error: error.message,
+    });
   }
 };

@@ -10,7 +10,7 @@ const ContactSchema = new mongoose.Schema(
     customerName: {
       type: String,
       trim: true,
-      required: [true, 'Customer name is required'],
+      default: '',
     },
     contactName: {
       type: String,
@@ -18,6 +18,11 @@ const ContactSchema = new mongoose.Schema(
       required: [true, 'Contact name is required'],
     },
     designation: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    mail: {
       type: String,
       trim: true,
       default: '',

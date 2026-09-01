@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Download, Loader, Printer } from 'lucide-react'
+import { ArrowLeft, Download, Edit2, Loader, Mail, Printer } from 'lucide-react'
 import html2pdf from 'html2pdf.js'
-import { fetchLeadById, type LeadRecord } from '@/lib/leadApi'
+import { fetchLeadById, type LeadRecord, sendQuotationPdf } from '@/lib/leadApi'
 import { fetchCompanyProfiles, type CompanyProfileRecord } from '@/lib/companyProfileApi'
 import { fetchCustomers, type CustomerApiRecord } from '@/lib/customerApi'
+import { Toast } from '@/components/toast'
 
 const safeNumber = (value: unknown): number => {
   if (value === null || value === undefined || value === '') return 0
@@ -100,6 +101,8 @@ export default function QuotationViewPage() {
   const [customer, setCustomer] = useState<CustomerApiRecord | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
   const printRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -217,6 +220,76 @@ export default function QuotationViewPage() {
       .save()
   }
 
+  const handleViewAndSendPdf = async () => {
+    if (!printRef.current || !id) {
+      setToast('Unable to generate PDF. Please try again.')
+      return
+    }
+
+    setIsSendingEmail(true)
+    try {
+      // Generate PDF as data URL (base64)
+      const pdfDataUrl = await new Promise<string>((resolve, reject) => {
+        html2pdf()
+          .set({
+            margin: [0, 0, 0, 0],
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+              scale: 2,
+              useCORS: true,
+              scrollX: 0,
+              scrollY: 0,
+              backgroundColor: '#ffffff',
+            },
+            jsPDF: {
+              unit: 'mm',
+              format: 'a4',
+              orientation: 'portrait',
+            },
+          })
+          .from(printRef.current!)
+          .toPdf()
+          .get('pdf')
+          .then((pdf: any) => {
+            // Get PDF as data URL string (includes "data:application/pdf;base64," prefix)
+            const dataUrl = pdf.output('dataurlstring')
+            resolve(dataUrl)
+          })
+          .catch((err: any) => {
+            reject(err)
+          })
+      })
+
+      // Get recipient email from localStorage
+      const recipientEmail = window.localStorage.getItem('userEmail') || ''
+
+      if (!recipientEmail) {
+        setToast('User email not found. Please set your email in profile settings.')
+        setIsSendingEmail(false)
+        return
+      }
+
+      // Send PDF to backend
+      const response = await sendQuotationPdf(id, pdfDataUrl, recipientEmail)
+
+      if (response.success) {
+        setToast('Quotation PDF sent successfully to ' + recipientEmail)
+      } else {
+        setToast(response.message || 'Failed to send quotation PDF')
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate or send PDF'
+      setToast(errorMessage)
+      console.error('PDF send error:', err)
+    } finally {
+      setIsSendingEmail(false)
+    }
+  }
+
+  const handleEdit = () => {
+    navigate(`/sales/quotations/edit/${id}`)
+  }
+
   const getProductSubtotal = (product: { quantity?: string | number; unitPrice?: string | number }) => {
     return safeNumber(product.quantity) * safeNumber(product.unitPrice)
   }
@@ -260,23 +333,59 @@ export default function QuotationViewPage() {
     { label: 'Delivery', value: `Within ${deliveryValue} from the date of receipt of PO.` },
     { label: 'Quote Validity', value: `This quote is valid for ${validityValue} days only. Orders received beyond quote validity will not be accepted.` },
     { label: 'Prices quoted', value: 'Prices quoted are exclusive of any additional charges unless mentioned explicitly.' },
-    { label: 'Licenses/Subscription', value: 'All licenses/subscription fees, if any, will be as per the agreed commercial terms.' },
-    { label: 'Support', value: 'Support and maintenance, if applicable, will be as per the agreed support plan.' },
-    { label: 'Courier charges', value: 'Courier and dispatch charges, if any, will be additional as applicable.' },
-    { label: 'Implementation & Training', value: quotation.quotationDetails?.note || 'Implementation and training support will be provided as mutually agreed.' },
+    { label: 'Licenses/Subscription', value: 'Synov IT Services Pvt Ltd will only liaise between customer and OEM /Vendor and is responsible only to deliver licenses/subscription as per quote provided. License/Subscription EULA as per OEM/Vendor.' },
+    { label: 'Support', value: 'As per OEM/Vendor terms unless mentioned specifically.' },
+    { label: 'Courier charges', value: 'Courier charges should be borne by the client if the delivery location is outside Bengaluru.' },
+    { label: 'Implementation & Training', value: 'The prices quoted do not include Implementation, Training or any other professional services unless mentioned specifically.' },
   ]
 
   return (
     <div className="bg-white text-black" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
       <style>{`
         @page {
-          size: A4;
-          margin: 10mm;
+          size: A4 portrait;
+          margin: 0;
         }
 
         @media print {
-          body {
+          html,
+          body,
+          #root {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: auto !important;
+            height: auto !important;
+            max-width: none !important;
+            max-height: none !important;
+            overflow: visible !important;
             background: #ffffff !important;
+            display: block !important;
+          }
+              .quotation-view-shell img[alt="Company partner logo"] {
+    height: 160px !important;
+    width: auto !important;
+    max-width: none !important;
+    object-fit: contain !important;
+  }
+
+          /* Remove app shell offsets that push the quotation off-center */
+          div[class*="h-screen"],
+          div[class*="mt-16"],
+          div[class*="calc(100vh-4rem)"],
+          main {
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+
+          /* Hide CRM app chrome */
+          div[class*="fixed"][class*="top-0"],
+          div[class*="1F2937"][class*="flex-col"] {
+            display: none !important;
           }
 
           .quotation-actions {
@@ -284,9 +393,68 @@ export default function QuotationViewPage() {
           }
 
           .quotation-view-shell {
+            width: 194mm !important;
+            height: auto !important;
+            min-height: 0 !important;
+            margin: 8mm auto !important;
+            padding: 4mm !important;
+            box-sizing: border-box !important;
+           border: 0.5px solid #000000 !important;
+            background: #ffffff !important;
+            box-shadow: none !important;
             max-width: none !important;
+            overflow: visible !important;
+          }
+
+          .quotation-view-shell > div {
+            width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            box-sizing: border-box !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+          }
+
+          /* Ensure footer stays in normal document flow */
+          .quotation-branding-block {
+            position: static !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            max-height: none !important;
+            page-break-before: auto !important;
+            break-before: auto !important;
+            page-break-after: auto !important;
+            break-after: auto !important;
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+          }
+
+          .quotation-footer {
+            position: static !important;
+            display: block !important;
+            margin: auto 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            max-height: none !important;
+            page-break-before: auto !important;
+            break-before: auto !important;
+            page-break-after: auto !important;
+            break-after: auto !important;
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+          }
+
+          .quotation-footer div {
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+            height: auto !important;
           }
         }
       `}</style>
@@ -303,21 +471,49 @@ export default function QuotationViewPage() {
           </button>
           <button
             type="button"
-            onClick={() => void handleDownloadPdf()}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            onClick={handleEdit}
+            disabled={isSendingEmail}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
           >
-            <Download className="h-4 w-4" />
-            Download PDF
+            <Edit2 className="h-4 w-4" />
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleViewAndSendPdf()}
+            disabled={isSendingEmail}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            {isSendingEmail ? (
+              <>
+                <Loader className="h-4 w-4 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              <>
+                <Mail className="h-4 w-4" />
+                View & Send PDF
+              </>
+            )}
           </button>
           <button
             type="button"
             onClick={handlePrint}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            disabled={isSendingEmail}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
           >
             <Printer className="h-4 w-4" />
             Print
           </button>
         </div>
+
+        {toast && (
+          <Toast
+            message={toast}
+            onClose={() => setToast(null)}
+            type={toast.includes('successfully') ? 'success' : 'error'}
+          />
+        )}
 
         <div ref={printRef} className="quotation-view-shell mx-auto max-w-[820px]">
           <div className="border border-[#111111] bg-white p-1.5 md:p-2" style={{ borderRadius: 0, boxShadow: 'none' }}>
@@ -376,24 +572,25 @@ export default function QuotationViewPage() {
             <div className="mt-1">We are pleased to send our best quote for the following products enquired.</div>
           </div>
 
-         <div className="mt-2 overflow-hidden" style={{ border: '0.5px solid #c4c4c4' }}>
+         {/* <div className="mt-2 overflow-hidden" style={{ border: '0.3px solid #000000' }}> */}
+         <div className="mt-2 overflow-hidden">
             <table className="w-full text-[10px] text-black" style={{ fontFamily: '"Times New Roman", Times, serif', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ height: '22px' }}>
-                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '5%', border: '0.5px solid #c4c4c4' }}>SL.<br />No.</th>
-                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '15%', border: '0.5px solid #c4c4c4' }}>Product</th>
-                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '25%', border: '0.5px solid #c4c4c4' }}>Description</th>
-                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '6%', border: '0.5px solid #c4c4c4' }}>Qty</th>
-                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '11%', border: '0.5px solid #c4c4c4' }}>Unit<br />Price(INR)</th>
-                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '11%', border: '0.5px solid #c4c4c4' }}>Sub<br />Total(INR)</th>
-                  <th colSpan={2} className="px-1 py-1 text-center font-bold align-middle" style={{ width: '14%', border: '0.5px solid #c4c4c4' }}>GST (INR)</th>
-                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '13%', border: '0.5px solid #c4c4c4' }}>Total<br />Price(INR)</th>
+                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '5%', border: '0.3px solid #000000' }}>SL.<br />No.</th>
+                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '15%', border: '0.3px solid #000000' }}>Product</th>
+                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '25%', border: '0.3px solid #000000' }}>Description</th>
+                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '6%', border: '0.3px solid #000000' }}>Qty</th>
+                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '11%', border: '0.3px solid #000000' }}>Unit<br />Price(INR)</th>
+                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '11%', border: '0.3px solid #000000' }}>Sub<br />Total(INR)</th>
+                  <th colSpan={2} className="px-1 py-1 text-center font-bold align-middle" style={{ width: '14%', border: '0.3px solid #000000' }}>GST (INR)</th>
+                  <th className="px-1 py-1 text-center font-bold align-middle" style={{ width: '13%', border: '0.3px solid #000000' }}>Total<br />Price(INR)</th>
                 </tr>
                 {/* <tr style={{ height: '16px' }}>
-                  <th colSpan={6} style={{ backgroundColor: '#ffffff', border: '0.5px solid #c4c4c4', padding: 0 }} />
-                  <th className="px-0.5 py-0 text-center font-bold align-middle text-[9px]" style={{ width: '7%', border: '0.5px solid #c4c4c4' }}>CGST<br />9%</th>
-                  <th className="px-0.5 py-0 text-center font-bold align-middle text-[9px]" style={{ width: '7%', border: '0.5px solid #c4c4c4' }}>SGST<br />9%</th>
-                  <th style={{ backgroundColor: '#ffffff', border: '0.5px solid #c4c4c4', padding: 0 }} />
+                  <th colSpan={6} style={{ backgroundColor: '#ffffff', border: '0.3px solid #000000', padding: 0 }} />
+                  <th className="px-0.5 py-0 text-center font-bold align-middle text-[9px]" style={{ width: '7%', border: '0.3px solid #000000' }}>CGST<br />9%</th>
+                  <th className="px-0.5 py-0 text-center font-bold align-middle text-[9px]" style={{ width: '7%', border: '0.3px solid #000000' }}>SGST<br />9%</th>
+                  <th style={{ backgroundColor: '#ffffff', border: '0.3px solid #000000', padding: 0 }} />
                 </tr> */}
               </thead>
               <tbody>
@@ -409,18 +606,18 @@ export default function QuotationViewPage() {
 
                     return (
                       <tr key={`${product.productName || 'product'}-${index}`} style={{ height: 'auto' }}>
-                        <td className="px-1 py-1 text-center align-top" style={{ border: '0.5px solid #c4c4c4', verticalAlign: 'top' }}>{index + 1}</td>
-                        <td className="px-1 py-1 text-left align-top" style={{ border: '0.5px solid #c4c4c4', verticalAlign: 'top' }}>{product.productName || '—'}</td>
-                        <td className="px-1 py-1 text-left align-top" style={{ border: '0.5px solid #c4c4c4', wordWrap: 'break-word', verticalAlign: 'top', whiteSpace: 'normal' }}>{product.productDescription || '—'}</td>
-                        <td className="px-1 py-1 text-center align-top" style={{ border: '0.5px solid #c4c4c4', verticalAlign: 'top' }}>{safeNumber(product.quantity)}</td>
-                        <td className="px-1 py-1 text-right align-top" style={{ border: '0.5px solid #c4c4c4', verticalAlign: 'top' }}>{formatCurrency(product.unitPrice)}</td>
-                        <td className="px-1 py-1 text-right align-top" style={{ border: '0.5px solid #c4c4c4', verticalAlign: 'top' }}>{formatCurrency(subtotal)}</td>
-                        {/* <td className="px-1 py-1 text-right align-top text-[9px]" style={{ border: '0.5px solid #c4c4c4', verticalAlign: 'top' }}>{formatCurrency(cgst)}</td>
-                        <td className="px-1 py-1 text-right align-top text-[9px]" style={{ border: '0.5px solid #c4c4c4', verticalAlign: 'top' }}>{formatCurrency(sgst)}</td> */}
+                        <td className="px-1 py-1 text-center align-top" style={{ border: '0.3px solid #000000', verticalAlign: 'top' }}>{index + 1}</td>
+                        <td className="px-1 py-1 text-left align-top" style={{ border: '0.3px solid #000000', verticalAlign: 'top' }}>{product.productName || '—'}</td>
+                        <td className="px-1 py-1 text-left align-top" style={{ border: '0.3px solid #000000', wordWrap: 'break-word', verticalAlign: 'top', whiteSpace: 'normal' }}>{product.productDescription || '—'}</td>
+                        <td className="px-1 py-1 text-center align-top" style={{ border: '0.3px solid #000000', verticalAlign: 'top' }}>{safeNumber(product.quantity)}</td>
+                        <td className="px-1 py-1 text-right align-top" style={{ border: '0.3px solid #000000', verticalAlign: 'top' }}>{formatCurrency(product.unitPrice)}</td>
+                        <td className="px-1 py-1 text-right align-top" style={{ border: '0.3px solid #000000', verticalAlign: 'top' }}>{formatCurrency(subtotal)}</td>
+                        {/* <td className="px-1 py-1 text-right align-top text-[9px]" style={{ border: '0.3px solid #000000', verticalAlign: 'top' }}>{formatCurrency(cgst)}</td>
+                        <td className="px-1 py-1 text-right align-top text-[9px]" style={{ border: '0.3px solid #000000', verticalAlign: 'top' }}>{formatCurrency(sgst)}</td> */}
                         <td
   className="px-1 py-1 text-center align-top text-[9px]"
   style={{
-    border: '0.5px solid #c4c4c4',
+    border: '0.3px solid #000000',
     verticalAlign: 'top',
   }}
 >
@@ -437,7 +634,7 @@ export default function QuotationViewPage() {
 <td
   className="px-1 py-1 text-center align-top text-[9px]"
   style={{
-    border: '0.5px solid #c4c4c4',
+    border: '0.3px solid #000000',
     verticalAlign: 'top',
   }}
 >
@@ -450,23 +647,23 @@ export default function QuotationViewPage() {
   />
   <div>{formatCurrency(sgst)}</div>
 </td>
-                        <td className="px-1 py-1 text-right align-top" style={{ border: '0.5px solid #c4c4c4', verticalAlign: 'top' }}>{formatCurrency(total)}</td>
+                        <td className="px-1 py-1 text-right align-top" style={{ border: '0.3px solid #000000', verticalAlign: 'top' }}>{formatCurrency(total)}</td>
                       </tr>
                     )
                   })
                 ) : (
                   <tr>
-                    <td colSpan={9} className="px-1 py-2 text-center text-slate-600" style={{ border: '0.5px solid #c4c4c4' }}>
+                    <td colSpan={9} className="px-1 py-2 text-center text-slate-600" style={{ border: '0.3px solid #000000' }}>
                       No products added.
                     </td>
                   </tr>
                 )}
 
                 <tr style={{ height: '18px', fontWeight: 'bold' }}>
-                  <td colSpan={5} className="px-1 py-1 text-right align-middle" style={{ border: '0.5px solid #c4c4c4', fontWeight: 'bold' }}>Grand Total</td>
-                  <td className="px-1 py-1 text-right align-middle" style={{ border: '0.5px solid #c4c4c4', fontWeight: 'bold' }}>{formatCurrency(subtotalTotal)}</td>
-                  <td colSpan={2} className="px-1 py-1 text-center align-middle" style={{ border: '0.5px solid #c4c4c4', fontWeight: 'bold' }}>{formatCurrency(totalCGST + totalSGST)}</td>
-                  <td className="px-1 py-1 text-right align-middle" style={{ border: '0.5px solid #c4c4c4', fontWeight: 'bold' }}>{formatCurrency(grandTotal)}</td>
+                  <td colSpan={5} className="px-1 py-1 text-right align-middle" style={{ border: '0.3px solid #000000', fontWeight: 'bold' }}>Grand Total</td>
+                  <td className="px-1 py-1 text-right align-middle" style={{ border: '0.3px solid #000000', fontWeight: 'bold' }}>{formatCurrency(subtotalTotal)}</td>
+                  <td colSpan={2} className="px-1 py-1 text-center align-middle" style={{ border: '0.3px solid #000000', fontWeight: 'bold' }}>{formatCurrency(totalCGST + totalSGST)}</td>
+                  <td className="px-1 py-1 text-right align-middle" style={{ border: '0.3px solid #000000', fontWeight: 'bold' }}>{formatCurrency(grandTotal)}</td>
                 </tr>
               </tbody>
             </table>
@@ -518,9 +715,10 @@ export default function QuotationViewPage() {
 </div>
 
           <div
-  className="mt-4 text-[10px] leading-tight text-black"
+  className="mt-4 leading-tight text-black"
   style={{
     fontFamily: '"Times New Roman", Times, serif',
+    fontSize: '12px',
   }}
 >
   <p className="m-0">
@@ -546,30 +744,32 @@ export default function QuotationViewPage() {
   </div>
 </div>
 
-          {partnerLogoUrl && (
-            <div className="mt-0 flex justify-center pt-4">
-              <img
-                src={partnerLogoUrl}
-                alt="Company partner logo"
-                className="h-[75px] w-auto max-w-full object-contain md:h-[140px]"
-              />
-            </div>
-          )}
+          <div className="quotation-branding-block">
+            {partnerLogoUrl && (
+              <div className="mt-0 flex justify-center pt-4">
+                <img
+                  src={partnerLogoUrl}
+                  alt="Company partner logo"
+                  className="h-[75px] w-auto max-w-full object-contain md:h-[180px]"
+                />
+              </div>
+            )}
 
-          <div className="mt-4 border-t border-[#2b2b2b] pt-3 text-center text-[11px] text-black">
-            <div className="font-bold text-black">{companyProfile?.companyName || 'Company Name'}</div>
-            <div className="mt-1">
-              {companyProfile?.address || ''}
-              {companyProfile?.city ? `, ${companyProfile.city}` : ''}
-              {companyProfile?.state ? `, ${companyProfile.state}` : ''}
-              {companyProfile?.pin ? ` - ${companyProfile.pin}` : ''}
+            <div className="quotation-footer mt-4 border-t border-[#2b2b2b] pt-3 text-center text-[11px] text-black">
+              <div className="font-bold text-black">{companyProfile?.companyName || 'Company Name'}</div>
+              <div className="mt-1">
+                {companyProfile?.address || ''}
+                {companyProfile?.city ? `, ${companyProfile.city}` : ''}
+                {companyProfile?.state ? `, ${companyProfile.state}` : ''}
+                {companyProfile?.pin ? ` - ${companyProfile.pin}` : ''}
+              </div>
+              <div className="mt-1">
+                {companyProfile?.companyContactNo ? `Phone: ${companyProfile.companyContactNo}` : ''}
+                {companyProfile?.email ? ` | Email: ${companyProfile.email}` : ''}
+                {companyProfile?.website ? ` | Website: ${companyProfile.website}` : ''}
+              </div>
             </div>
-            <div className="mt-1">
-              {companyProfile?.companyContactNo ? `Phone: ${companyProfile.companyContactNo}` : ''}
-              {companyProfile?.email ? ` | Email: ${companyProfile.email}` : ''}
-              {companyProfile?.website ? ` | Website: ${companyProfile.website}` : ''}
-            </div>
-            </div>
+          </div>
           </div>
         </div>
       </div>

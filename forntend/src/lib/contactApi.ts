@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getCachedResponse } from './apiCache';
+import { clearApiCache, getCachedResponse } from './apiCache';
 
 const API_BASE_URLS = Array.from(
   new Set(
@@ -25,6 +25,9 @@ async function requestWithFallback(method: 'get' | 'post' | 'put' | 'delete', ur
       });
       return response;
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        throw error;
+      }
       lastError = error;
     }
   }
@@ -38,6 +41,7 @@ export interface ContactRecord {
   customerName: string;
   contactName: string;
   designation: string;
+  mail?: string;
   contactNumber: string;
   email: string;
   createdAt?: string;
@@ -46,9 +50,10 @@ export interface ContactRecord {
 
 export interface ContactPayload {
   customerId?: string;
-  customerName: string;
+  customerName?: string;
   contactName: string;
   designation: string;
+  mail?: string;
   contactNumber: string;
   email: string;
 }
@@ -78,18 +83,40 @@ export async function fetchContactById(id: string) {
 }
 
 export async function createContact(payload: ContactPayload) {
-  const response = await requestWithFallback('post', '/contacts', { data: payload });
-  return response.data;
+  try {
+    const response = await requestWithFallback('post', '/contacts', { data: payload });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.data?.message) {
+      throw new Error(error.response.data.message);
+    }
+    throw error;
+  }
 }
 
 export async function updateContact(id: string, payload: ContactPayload) {
-  const response = await requestWithFallback('put', `/contacts/${id}`, { data: payload });
-  return response.data;
+  try {
+    const response = await requestWithFallback('put', `/contacts/${id}`, { data: payload });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.data?.message) {
+      throw new Error(error.response.data.message);
+    }
+    throw error;
+  }
 }
 
 export async function deleteContact(id: string) {
   const response = await requestWithFallback('delete', `/contacts/${id}`);
   return response.data;
+}
+
+export async function importContacts(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await requestWithFallback('post', '/contacts/import', { data: formData });
+  clearApiCache();
+  return response.data as { success: boolean; message: string; imported?: number; skipped?: number };
 }
 
 export async function fetchCustomersForContacts() {

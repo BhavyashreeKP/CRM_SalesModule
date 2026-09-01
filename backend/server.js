@@ -2,6 +2,7 @@ const path = require('path');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const multer = require('multer');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const customerRoutes = require('./routes/customerRoutes');
@@ -13,6 +14,7 @@ const activityRoutes = require('./routes/activityRoutes');
 const calendarRoutes = require('./routes/calendarRoutes');
 const locationRoutes = require('./routes/locationRoutes');
 const companyProfileRoutes = require('./routes/companyProfileRoutes');
+const opfRoutes = require('./routes/opfRoutes');
 
 const app = express();
 
@@ -29,7 +31,16 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/activities', activityRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/company-profiles', companyProfileRoutes);
+app.use('/api/opf', opfRoutes);
 app.use('/api/locations', locationRoutes);
+
+app.use((error, _req, res, _next) => {
+  if (error instanceof multer.MulterError || error?.message?.startsWith('Unsupported file type:')) {
+    return res.status(400).json({ success: false, message: 'Campaign file upload is invalid or exceeds the allowed size.' });
+  }
+  console.error('Unhandled API error:', error);
+  return res.status(500).json({ success: false, message: 'An unexpected server error occurred.' });
+});
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok' });

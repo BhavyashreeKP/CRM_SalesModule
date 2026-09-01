@@ -206,7 +206,7 @@ export default function CustomersPage() {
             Customer List
           </h1>
           <p className="text-gray-600">
-            Manage customer accounts and contacts in one place.
+            {/* Manage customer accounts and contacts in one place. */}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

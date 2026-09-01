@@ -1,380 +1,175 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, ImagePlus, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronRight } from 'lucide-react'
-import { createCampaign, fetchRecipientCounts, fetchRecipientData, getCampaignById, sendCampaign, updateCampaign } from '@/lib/mailCampaignApi'
 import { TiptapEditor } from '@/components/TiptapEditor'
+import { createCampaign, getCampaignById, sendCampaign, updateCampaign } from '@/lib/mailCampaignApi'
+import { fetchCompanyProfiles, type CompanyProfileRecord } from '@/lib/companyProfileApi'
 
-const stepLabels = ['Campaign Details', 'Recipients', 'Email Designer', 'Review & Send']
-const recipientModules = ['Customers', 'Contacts', 'Suppliers', 'Leads', 'Employees']
-const emptyRecipientCounts: Record<string, number> = { Customers: 0, Contacts: 0, Suppliers: 0, Leads: 0, Employees: 0 }
+const alignmentOptions = ['Image Before Text', 'Image After Text', 'Image Above Text', 'Image Below Text']
 
 export default function MailCampaignFormPage() {
   const navigate = useNavigate()
   const { id } = useParams()
-  const [step, setStep] = useState(1)
   const [campaignName, setCampaignName] = useState('')
   const [subject, setSubject] = useState('')
-  const [campaignType, setCampaignType] = useState('Promotional')
-  const [priority, setPriority] = useState('Medium')
-  const [imageAlignment, setImageAlignment] = useState('Image Before Text')
-  const [tags, setTags] = useState<string[]>([])
-  const [selectedModules, setSelectedModules] = useState<string[]>([])
-  const [recipientEmails, setRecipientEmails] = useState<string[]>([])
-  const [recipientCount, setRecipientCount] = useState(0)
-  const [recipientCounts, setRecipientCounts] = useState<Record<string, number>>(emptyRecipientCounts)
+  const [imageAlignment, setImageAlignment] = useState(alignmentOptions[0])
   const [campaignBody, setCampaignBody] = useState('')
   const [footer, setFooter] = useState('')
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState('')
-  const [attachments, setAttachments] = useState<File[]>([])
-  const [status, setStatus] = useState('Draft')
-  const [scheduledDate, setScheduledDate] = useState('')
-  const [scheduledTime, setScheduledTime] = useState('')
-  const [timezone, setTimezone] = useState('UTC')
-  const [testEmail, setTestEmail] = useState('')
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfileRecord | null>(null)
+  const [image, setImage] = useState<File | null>(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('')
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [error, setError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const resolveImageUrl = (filePath?: string) => {
+    if (!filePath) return ''
+    if (/^https?:\/\//i.test(filePath)) return filePath
+    const base = (import.meta.env.VITE_API_URL || 'http://localhost:5001/api').replace(/\/api$/, '')
+    return `${base}${filePath}`
+  }
 
   useEffect(() => {
-    if (!id) return
-    const loadCampaign = async () => {
-      const campaign = await getCampaignById(id)
-      setCampaignName(campaign.campaignName || '')
-      setSubject(campaign.subject || '')
-      setCampaignType(campaign.campaignType || 'Promotional')
-      setPriority(campaign.priority || 'Medium')
-      setImageAlignment(campaign.imageAlignment || 'Image Before Text')
-      setTags(campaign.tags || [])
-      setSelectedModules(campaign.recipientModules || [])
-      setRecipientEmails(campaign.recipientEmails || [])
-      setRecipientCount(campaign.recipientCount || 0)
-      setCampaignBody(campaign.campaignBody || '')
-      setFooter(campaign.footer || '')
-      setStatus(campaign.status || 'Draft')
-      setScheduledDate(campaign.scheduledDate || '')
-      setScheduledTime(campaign.scheduledTime || '')
-      setTimezone(campaign.timezone || 'UTC')
-      setTestEmail(campaign.testEmail || '')
-      if (campaign.image) setImagePreview(campaign.image)
-    }
-    void loadCampaign()
-  }, [id])
-
-  useEffect(() => {
-    const loadRecipientCounts = async () => {
+    const loadCampaignFormData = async () => {
       try {
-        const response = await fetchRecipientCounts()
-        const nextCounts = response?.data || emptyRecipientCounts
-        setRecipientCounts({ ...emptyRecipientCounts, ...nextCounts })
-      } catch (error) {
-        console.error('Unable to load recipient counts:', error)
+        const profileResponse = await fetchCompanyProfiles({ page: 1, limit: 1 })
+        setCompanyProfile(profileResponse.data?.[0] || null)
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : 'Unable to load campaign data.')
       }
     }
-
-    void loadRecipientCounts()
-
-    const intervalId = window.setInterval(() => {
-      void loadRecipientCounts()
-    }, 15000)
-
-    return () => window.clearInterval(intervalId)
+    void loadCampaignFormData()
   }, [])
 
   useEffect(() => {
-    const nextCount = selectedModules.reduce((sum, module) => sum + (recipientCounts[module] || 0), 0)
-    setRecipientCount(nextCount)
+    if (!id) return
+    void getCampaignById(id).then((campaign) => {
+      setCampaignName(campaign.campaignName || '')
+      setSubject(campaign.subject || '')
+      setImageAlignment(campaign.imageAlignment || alignmentOptions[0])
+      setCampaignBody(campaign.campaignBody || '')
+      setFooter(campaign.footer || '')
+    }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Unable to load campaign.'))
+  }, [id])
 
-    const loadSelectedRecipientEmails = async () => {
-      if (!selectedModules.length) {
-        setRecipientEmails([])
-        return
-      }
-
-      try {
-        const response = await fetchRecipientData(selectedModules)
-        const modulesData = response?.data || {}
-        const emails = selectedModules.flatMap((module) => modulesData[module] || [])
-        setRecipientEmails([...new Set(emails)])
-      } catch (error) {
-        console.error('Unable to load recipient emails:', error)
-        setRecipientEmails([])
-      }
-    }
-
-    void loadSelectedRecipientEmails()
-  }, [selectedModules, recipientCounts])
-
-  const handleModuleToggle = (module: string) => {
-    setSelectedModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])
-  }
-
-  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+  const handleImageChange = (file: File | null) => {
     if (!file) return
-    setImageFile(file)
-    const previewUrl = URL.createObjectURL(file)
-    setImagePreview(previewUrl)
+    setImage(file)
+    setImagePreviewUrl(URL.createObjectURL(file))
   }
 
-  const handleAttachmentSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    setAttachments((current) => [...current, ...files])
-  }
+  const saveCampaign = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!campaignName.trim()) {
+      setError('Campaign name is required.')
+      return
+    }
+    if (!subject.trim()) {
+      setError('Subject is required.')
+      return
+    }
+    setIsSaving(true)
+    setError('')
+    const formData = new FormData()
+    formData.append('campaignName', campaignName.trim())
+    formData.append('subject', subject.trim())
+    formData.append('campaignType', 'Promotional')
+    formData.append('imageAlignment', imageAlignment)
+    formData.append('campaignBody', campaignBody)
+    formData.append('footer', footer)
+    formData.append('status', 'Draft')
+    formData.append('createdBy', typeof window !== 'undefined' ? (window.localStorage.getItem('userName') || window.localStorage.getItem('name') || 'Admin') : 'Admin')
+    formData.append('createdDate', new Date().toISOString().split('T')[0])
+    if (image) formData.append('image', image)
 
-  const validateRequired = () => !!campaignName && !!subject && selectedModules.length > 0 && !!campaignBody && !!footer
-
-  const handleAction = async (actionStatus: string) => {
     try {
-      if (!validateRequired()) {
-        setError('Please fill out all required fields.')
-        return
-      }
-      setError('')
-
-      const createdBy = typeof window !== 'undefined'
-        ? (window.localStorage.getItem('userName') || window.localStorage.getItem('name') || 'Admin')
-        : 'Admin'
-      const nextRecipientCount = recipientEmails.length || recipientCount
-      const formData = new FormData()
-      formData.append('campaignName', campaignName)
-      formData.append('subject', subject)
-      formData.append('campaignType', campaignType)
-      formData.append('priority', priority)
-      formData.append('imageAlignment', imageAlignment)
-      formData.append('tags', JSON.stringify(tags))
-      formData.append('recipientModules', JSON.stringify(selectedModules))
-      formData.append('recipientGroup', JSON.stringify(selectedModules))
-      formData.append('recipientEmails', JSON.stringify(recipientEmails))
-      formData.append('recipientCount', String(nextRecipientCount))
-      formData.append('campaignBody', campaignBody)
-      formData.append('footer', footer)
-      formData.append('status', actionStatus)
-      formData.append('createdBy', createdBy)
-      formData.append('createdDate', new Date().toISOString().split('T')[0])
-      formData.append('scheduledDate', scheduledDate)
-      formData.append('scheduledTime', scheduledTime)
-      formData.append('timezone', timezone)
-      formData.append('testEmail', testEmail)
-      if (imageFile) formData.append('image', imageFile)
-      attachments.forEach((file) => formData.append('attachments', file))
-
-      let campaignId = id || ''
-
-      if (id) {
-        await updateCampaign(id, formData)
-      } else {
-        const created = await createCampaign(formData)
-        campaignId = created?.data?._id || created?.data?.id || ''
-      }
-
-      if (actionStatus === 'Sent' && campaignId) {
-        const sendResponse = await sendCampaign(campaignId, recipientEmails)
-        if (!sendResponse?.success) {
-          setError(sendResponse?.message || 'Campaign was saved but sending failed.')
-          navigate('/sales/mail-campaign')
-          return
-        }
-      }
-
+      const savedCampaign = id ? await updateCampaign(id, formData) : await createCampaign(formData)
+      const savedId = id || savedCampaign.data?._id
+      if (!savedId) throw new Error('Campaign was saved without an ID and could not be sent.')
+      await sendCampaign(savedId)
       navigate('/sales/mail-campaign')
-    } catch (err) {
-      console.error('Unable to save campaign:', err)
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred while saving the campaign.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save campaign.')
+    } finally {
+      setIsSaving(false)
     }
   }
 
-  const reviewSummary = useMemo(() => ({
-    campaignName,
-    subject,
-    recipientCount,
-    imagePreview,
-    campaignBody,
-    footer,
-    attachments,
-  }), [campaignName, subject, recipientCount, imagePreview, campaignBody, footer, attachments])
-
-  const handleStepNavigation = (targetStep: number) => {
-    if (targetStep < 1 || targetStep > stepLabels.length) return
-    setStep(targetStep)
-  }
+  const logoUrl = resolveImageUrl(companyProfile?.companyLogo?.filePath)
+  const logoBeforeBody = imageAlignment === 'Image Before Text' || imageAlignment === 'Image Above Text'
+  const previewContent = (
+    <div className="mx-auto max-w-2xl bg-white p-8 text-gray-800 shadow-sm" style={{ fontFamily: '"Times New Roman", Times, serif', fontSize: '16px', lineHeight: 1.5 }}>
+      {logoBeforeBody && logoUrl ? <img src={logoUrl} alt="Synov company logo" className="mb-5 block h-auto w-[120px] object-contain" /> : null}
+      <div className="[&_p]:m-0 [&_p]:mb-4 [&_p:empty]:min-h-[1.5em]" dangerouslySetInnerHTML={{ __html: campaignBody || '<p>Campaign body</p>' }} />
+      {!logoBeforeBody && logoUrl ? <img src={logoUrl} alt="Synov company logo" className="my-5 block h-auto w-[120px] object-contain" /> : null}
+      <div className="mt-6 border-t border-gray-200 pt-4 [&_p]:m-0 [&_p]:mb-4 [&_p:empty]:min-h-[1.5em]" dangerouslySetInnerHTML={{ __html: footer || '<p>Footer</p>' }} />
+    </div>
+  )
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="mb-2 text-3xl font-serif font-bold text-gray-900">Mail Campaign</h1>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          {stepLabels.map((label, index) => {
-            const currentStep = index + 1
-            const isActive = step === currentStep
-            const isCompleted = currentStep < step
+    <div className="space-y-6">
+      <button type="button" onClick={() => navigate('/sales/mail-campaign')} className="inline-flex items-center gap-2 text-sm font-semibold text-[#2563EB]"><ArrowLeft className="h-4 w-4" /> Back to Mail Campaigns</button>
+      <div className="rounded-xl border border-[#EFECE5] bg-white p-8 shadow-sm">
+        <h1 className="mb-8 text-3xl font-serif font-bold text-gray-900">{id ? 'Edit Campaign' : 'Create Campaign'}</h1>
+        {error ? <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+        <form onSubmit={saveCampaign} className="space-y-8">
+          <div className="grid gap-6 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-gray-700">Campaign Name</span>
+              <input value={campaignName} onChange={(event) => setCampaignName(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#CEC9BD]" placeholder="Campaign name" />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-gray-700">Subject</span>
+              <input value={subject} onChange={(event) => setSubject(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#CEC9BD]" placeholder="Email subject" />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-gray-700">Campaign Image Alignment</span>
+              <select value={imageAlignment} onChange={(event) => setImageAlignment(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#CEC9BD]">
+                {alignmentOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
+          </div>
 
-            return (
-              <button
-                key={label}
-                type="button"
-                onClick={() => handleStepNavigation(currentStep)}
-                className="flex cursor-pointer items-center gap-2 text-left"
-              >
-                {/* <div className={`flex h-8 w-8 items-center justify-center rounded-full ${isActive ? 'bg-[#2563EB] text-white' : isCompleted ? 'bg-[#E0F2FE] text-[#2563EB]' : 'bg-[#F2EFE8] text-gray-700'}`}>
-                  {index + 1}
-                </div> */}
-                <span className={isActive ? 'font-semibold text-gray-900' : isCompleted ? 'font-medium text-gray-700' : ''}>{label}</span>
-                {index < stepLabels.length - 1 && <ChevronRight className="h-4 w-4 text-gray-400" />}
-              </button>
-            )
-          })}
-        </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-gray-700">Campaign Body</label>
+            <TiptapEditor value={campaignBody} onChange={setCampaignBody} placeholder="Write your campaign body" />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-gray-700">Image Upload</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <input ref={imageInputRef} type="file" accept="image/*" onChange={(event) => handleImageChange(event.target.files?.[0] || null)} className="block flex-1 rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm text-gray-700" />
+              <button type="button" onClick={() => imageInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-lg border border-[#2563EB] bg-white px-4 py-2.5 text-sm font-medium text-[#2563EB]"><ImagePlus className="h-4 w-4" /> Add New Image</button>
+              {image ? <span className="text-sm text-gray-500">{image.name}</span> : null}
+            </div>
+            {imagePreviewUrl ? <img src={imagePreviewUrl} alt="Campaign upload preview" className="mt-3 max-h-32 max-w-xs object-contain" /> : null}
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-gray-700">Footer</label>
+            <TiptapEditor value={footer} onChange={setFooter} placeholder="Write your campaign footer" />
+          </div>
+
+          <div className="flex justify-end gap-3 border-t border-[#EFECE5] pt-6">
+            <button type="button" onClick={() => setIsPreviewOpen(true)} className="rounded-lg border border-[#2563EB] bg-white px-6 py-3 text-sm font-semibold text-[#2563EB]">Preview</button>
+            <button type="submit" disabled={isSaving} className="rounded-lg bg-[#2563EB] px-6 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Submitting...' : 'Submit'}</button>
+          </div>
+        </form>
       </div>
-
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-
-      <div className="rounded-xl border border-[#EFECE5] bg-white p-6 shadow-sm">
-        {step === 1 && (
-          <div className="space-y-6">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Campaign Name *</label>
-                <input value={campaignName} onChange={(event) => setCampaignName(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none" />
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Email Subject *</label>
-                <input value={subject} onChange={(event) => setSubject(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none" />
-              </div>
+      {isPreviewOpen ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Campaign preview">
+          <div className="mx-auto my-8 max-w-4xl rounded-xl bg-[#F7F5EF] p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">Campaign Preview</h2>
+              <button type="button" onClick={() => setIsPreviewOpen(false)} aria-label="Close preview" className="rounded p-2 text-gray-600 hover:bg-white"><X className="h-5 w-5" /></button>
             </div>
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Campaign Type</label>
-                <select value={campaignType} onChange={(event) => setCampaignType(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none">
-                  {['Promotional', 'Newsletter', 'Announcement', 'Reminder', 'Product Launch', 'Offer'].map((option) => <option key={option}>{option}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Campaign Priority</label>
-                <select value={priority} onChange={(event) => setPriority(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none">
-                  {['Low', 'Medium', 'High'].map((option) => <option key={option}>{option}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Image Alignment</label>
-                <select value={imageAlignment} onChange={(event) => setImageAlignment(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none">
-                  {['Image Before Text', 'Image After Text'].map((option) => <option key={option}>{option}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Campaign Tags</label>
-              <input value={tags.join(', ')} onChange={(event) => setTags(event.target.value.split(',').map((item) => item.trim()).filter(Boolean))} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none" placeholder="Enter tags separated by commas" />
-            </div>
+            {previewContent}
           </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              {recipientModules.map((module) => (
-                <button key={module} onClick={() => handleModuleToggle(module)} className={`rounded-lg border p-4 text-left ${selectedModules.includes(module) ? 'border-[#2563EB] bg-[#EFF6FF]' : 'border-[#EFECE5] bg-white'}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-900">{module}</span>
-                    <span className="text-sm text-gray-500">{recipientCounts[module] || 0} {recipientCounts[module] === 1 ? 'recipient' : 'recipients'}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="rounded-lg border border-[#EFECE5] bg-[#FAF8F2] p-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-gray-900">Total</span>
-                <span className="font-semibold text-[#2563EB]">{recipientCount} recipients</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="space-y-6">
-            <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Email Body</label>
-              <TiptapEditor value={campaignBody} onChange={setCampaignBody} placeholder="Compose your campaign body" />
-            </div>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Upload Campaign Image</label>
-                <input type="file" accept="image/*" onChange={handleImageSelect} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm" />
-                {imagePreview && (
-                  <div className="mt-4 rounded-lg border border-[#EFECE5] p-4">
-                    <img src={imagePreview} alt="Campaign preview" className="max-h-56 rounded-lg object-contain" />
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Attachments</label>
-                <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip" onChange={handleAttachmentSelect} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm" />
-                {attachments.length > 0 && <ul className="mt-3 space-y-2 text-sm text-gray-700">{attachments.map((file) => <li key={file.name} className="rounded border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2">{file.name}</li>)}</ul>}
-              </div>
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Footer</label>
-              <TiptapEditor value={footer} onChange={setFooter} placeholder="Compose your campaign footer" />
-            </div>
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="space-y-6">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="rounded-lg border border-[#EFECE5] bg-[#FAF8F2] p-4">
-                <h3 className="mb-3 text-lg font-semibold text-gray-900">Campaign Review</h3>
-                <dl className="space-y-2 text-sm text-gray-700">
-                  <div className="flex justify-between"><dt className="font-medium">Campaign Name</dt><dd>{campaignName || '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="font-medium">Subject</dt><dd>{subject || '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="font-medium">Recipient Count</dt><dd>{recipientCount}</dd></div>
-                  <div className="flex justify-between"><dt className="font-medium">Status</dt><dd>{status}</dd></div>
-                </dl>
-              </div>
-              <div className="rounded-lg border border-[#EFECE5] bg-[#FAF8F2] p-4">
-                <h3 className="mb-3 text-lg font-semibold text-gray-900">Preview</h3>
-                <div className="space-y-3">
-                  {imagePreview && <img src={imagePreview} alt="Campaign preview" className="max-h-32 rounded-lg object-contain" />}
-                  <div className="rounded border border-[#EFECE5] bg-white p-3 text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: campaignBody }} />
-                  <div className="rounded border border-[#EFECE5] bg-white p-3 text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: footer }} />
-                </div>
-              </div>
-            </div>
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Schedule Date</label>
-                <input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none" />
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Schedule Time</label>
-                <input type="time" value={scheduledTime} onChange={(event) => setScheduledTime(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none" />
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Timezone</label>
-                <select value={timezone} onChange={(event) => setTimezone(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none">
-                  {['UTC', 'IST', 'EST', 'CET'].map((option) => <option key={option}>{option}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Test Email</label>
-              <input value={testEmail} onChange={(event) => setTestEmail(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-3 py-2 text-sm outline-none" placeholder="Enter test email" />
-            </div>
-          </div>
-        )}
-
-        <div className="mt-8 flex flex-wrap items-center justify-end gap-3 border-t border-[#EFECE5] pt-6">
-          {step < stepLabels.length && <button onClick={() => setStep(step + 1)} className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white">Continue</button>}
-          {step === stepLabels.length && <>
-            <button onClick={() => void handleAction('Draft')} className="rounded-lg border border-[#EFECE5] bg-white px-4 py-2 text-sm font-medium text-gray-700">Save Draft</button>
-            <button onClick={() => void handleAction('Scheduled')} className="rounded-lg border border-[#EFECE5] bg-white px-4 py-2 text-sm font-medium text-gray-700">Schedule</button>
-            <button onClick={() =>  void handleAction('Sent') } className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white">Send Now</button>
-           
-          </>}
         </div>
-      </div>
+      ) : null}
     </div>
   )
 }
