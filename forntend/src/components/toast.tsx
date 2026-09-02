@@ -6,6 +6,7 @@ import { Check, AlertCircle, Info } from 'lucide-react'
 type ToastType = 'success' | 'error' | 'info'
 
 interface ToastProps {
+  isOpen?: boolean
   message: string
   type?: ToastType
   duration?: number
@@ -13,21 +14,26 @@ interface ToastProps {
 }
 
 export function Toast({
+  isOpen = true,
   message,
   type = 'success',
   duration = 3000,
   onClose,
 }: ToastProps) {
-  const [isVisible, setIsVisible] = useState(true)
+  const [isVisible, setIsVisible] = useState(isOpen)
 
   useEffect(() => {
+    setIsVisible(isOpen)
+
+    if (!isOpen) return
+
     const timer = setTimeout(() => {
       setIsVisible(false)
       onClose?.()
     }, duration)
 
     return () => clearTimeout(timer)
-  }, [duration, onClose])
+  }, [duration, isOpen, onClose])
 
   if (!isVisible) return null
 

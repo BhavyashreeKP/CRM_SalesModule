@@ -172,29 +172,30 @@ export default function EmployeeFormPage() {
           fetchCompanyProfiles({ page: 1, limit: 1000 }),
         ])
 
-        const employeeNames = Array.from(
-          new Set(
-            (employeesResponse?.data || [])
-              .map((employee) => employee.employeeName || employee.fullName || '')
-              .filter(Boolean)
-          )
-        ).sort((a, b) => a.localeCompare(b))
+        const employeeNamesSet = new Set<string>()
 
-        setEmployeeOptions(employeeNames)
+        ;(employeesResponse?.data || []).forEach((employee: { employeeName?: string; fullName?: string }) => {
+          const employeeName = String(employee.employeeName || employee.fullName || '').trim()
+          if (employeeName) {
+            employeeNamesSet.add(employeeName)
+          }
+        })
 
-        const branches = Array.from(
-          new Map(
-            (companyProfilesResponse?.data || [])
-              .map((profile) => {
-                const code = String(profile.branchCode || '').trim()
-                const name = String(profile.branchName || '').trim()
-                const label = code && name ? `${code} | ${name}` : code || name || ''
-                return [code || label, { value: code, label }]
-              })
-              .filter((entry) => Boolean(entry[1].value || entry[1].label))
-          ).values()
-        ).sort((a, b) => a.label.localeCompare(b.label))
+        setEmployeeOptions(Array.from(employeeNamesSet).sort((a, b) => a.localeCompare(b)))
 
+        const branchMap = new Map<string, { value: string; label: string }>()
+
+        ;(companyProfilesResponse?.data || []).forEach((profile: { branchCode?: string; branchName?: string }) => {
+          const code = String(profile.branchCode || '').trim()
+          const name = String(profile.branchName || '').trim()
+          const label = code && name ? `${code} | ${name}` : code || name || ''
+
+          if (!label) return
+
+          branchMap.set(code || label, { value: code, label })
+        })
+
+        const branches: { value: string; label: string }[] = Array.from(branchMap.values()).sort((a, b) => a.label.localeCompare(b.label))
         setBranchOptions(branches)
       } catch {
         setEmployeeOptions([])
