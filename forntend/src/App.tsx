@@ -36,6 +36,8 @@ import OPFGenerateFormPage from '@/pages/OPFGenerateFormPage'
 import OPFViewPage from '@/pages/OPFViewPage'
 import RenewalsPage from '@/pages/RenewalsPage'
 import DataAdminPage from '@/pages/DataAdminPage'
+import EmployeesPage from '@/pages/EmployeesPage'
+import EmployeeFormPage from '@/pages/EmployeeFormPage'
 
 function SalesLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -43,7 +45,7 @@ function SalesLayout({ children }: { children: React.ReactNode }) {
       <TopBar />
       <div className="mt-16 flex h-[calc(100vh-4rem)] overflow-hidden">
         <Sidebar />
-        <main className="min-h-0 flex-1 overflow-y-auto p-8">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-3">{children}</main>
       </div>
     </div>
   )
@@ -452,9 +454,33 @@ export default function App() {
             </SalesLayout>
           }
         />
+        <Route
+          path="/sales/employees"
+          element={
+            <SalesLayout>
+              <EmployeesPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/employees/new"
+          element={
+            <SalesLayout>
+              <EmployeeFormPage />
+            </SalesLayout>
+          }
+        />
+        <Route
+          path="/sales/employees/edit/:id"
+          element={
+            <SalesLayout>
+              <EmployeeFormPage />
+            </SalesLayout>
+          }
+        />
         <Route path="/sales/data-admin/import" element={<SalesLayout><PlaceholderPage module="Import Data" /></SalesLayout>} />
         <Route path="/sales/data-admin/export" element={<SalesLayout><PlaceholderPage module="Export Data" /></SalesLayout>} />
-        <Route path="/sales/data-admin/user-management" element={<SalesLayout><PlaceholderPage module="User Management" /></SalesLayout>} />
+        <Route path="/sales/data-admin/user-management" element={<SalesLayout><EmployeesPage /></SalesLayout>} />
         <Route path="/sales/data-admin/role-management" element={<SalesLayout><PlaceholderPage module="Role Management" /></SalesLayout>} />
         <Route path="/sales/data-admin/master-data" element={<SalesLayout><PlaceholderPage module="Master Data" /></SalesLayout>} />
         <Route path="/sales/data-admin/country-master" element={<SalesLayout><PlaceholderPage module="Country Master" /></SalesLayout>} />

@@ -269,15 +269,12 @@ export default function LeadsPage({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={BarChart3} label="Total Leads" value={metrics.total} description="All leads in the CRM" iconBg="bg-blue-100" iconColor="text-blue-700" />
         <StatCard icon={Sparkles} label="New Leads Today" value={metrics.newToday} description="Freshly created today" iconBg="bg-emerald-100" iconColor="text-emerald-700" />
-        <StatCard icon={Clock3} label="Pending Leads" value={metrics.pending} description="Awaiting attention" iconBg="bg-amber-100" iconColor="text-amber-700" />
-        <StatCard icon={Flame} label="Hot Leads" value={metrics.hot} description="Score above 80" iconBg="bg-rose-100" iconColor="text-rose-700" />
+        {/* <StatCard icon={Clock3} label="Pending Leads" value={metrics.pending} description="Awaiting attention" iconBg="bg-amber-100" iconColor="text-amber-700" /> */}
+        {/* <StatCard icon={Flame} label="Hot Leads" value={metrics.hot} description="Score above 80" iconBg="bg-rose-100" iconColor="text-rose-700" /> */}
         <StatCard icon={RefreshCw} label="Follow-ups Today" value={metrics.followUps} description="Scheduled follow ups" iconBg="bg-violet-100" iconColor="text-violet-700" />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <StatCard icon={Activity} label="Total Activities Generated" value={metrics.activities} description="Tracked events" iconBg="bg-sky-100" iconColor="text-sky-700" />
         <StatCard icon={Users} label="Total Funnels Generated" value={metrics.funnels} description="Qualified pipeline" iconBg="bg-indigo-100" iconColor="text-indigo-700" />
         <StatCard icon={FileText} label="Total Quotations Generated" value={metrics.quotations} description="Proposals sent" iconBg="bg-purple-100" iconColor="text-purple-700" />

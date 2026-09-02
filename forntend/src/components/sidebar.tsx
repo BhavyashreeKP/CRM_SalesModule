@@ -36,6 +36,7 @@ export function Sidebar() {
     { href: '/sales/renewals', label: 'Renewals', icon: Package2 },
     { href: '/sales/reports', label: 'Report', icon: LayoutDashboard },
     { href: '/sales/data-admin', label: 'Data Admin', icon: Package },
+    { href: '/sales/employees', label: 'Employees', icon: Users },
     { href: '/sales/company-profiles', label: 'Company Profiles', icon: Building2 },
   ]
 

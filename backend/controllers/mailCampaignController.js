@@ -378,9 +378,20 @@ exports.getCampaigns = async (req, res) => {
       MailCampaign.countDocuments(query),
     ]);
 
+    const campaignIds = campaigns.map((campaign) => campaign.campaignId);
+    const openCounts = await EmailLog.aggregate([
+      { $match: { campaignId: { $in: campaignIds }, openedAt: { $ne: null } } },
+      { $group: { _id: '$campaignId', recipients: { $addToSet: '$recipientEmail' } } },
+      { $project: { _id: 1, count: { $size: '$recipients' } } },
+    ]);
+    const openCountByCampaign = new Map(openCounts.map((item) => [item._id, item.count]));
+
     res.status(200).json({
       success: true,
-      data: campaigns.map(normalizeCampaign),
+      data: campaigns.map((campaign) => normalizeCampaign({
+        ...campaign,
+        opens: openCountByCampaign.get(campaign.campaignId) || 0,
+      })),
       pagination: {
         total,
         page: pageNum,
@@ -403,30 +414,89 @@ exports.getCampaignById = async (req, res) => {
   }
 };
 
-const getTrackingBaseUrl = (req) => process.env.PUBLIC_API_URL || `${req.protocol}://${req.get('host')}`;
+const buildPublicTrackingBaseUrl = (req) => {
+  const configuredBaseUrl = process.env.PUBLIC_API_URL || process.env.APP_URL || process.env.BACKEND_URL || process.env.BASE_URL || '';
+  const forwardedProto = (req.headers && req.headers['x-forwarded-proto']) || req.protocol || 'https';
+  const forwardedHost = (req.headers && (req.headers['x-forwarded-host'] || req.headers.host)) || req.get('host') || '';
+  const rawBaseUrl = configuredBaseUrl || `${Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto}://${Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost}`;
+  const normalizedBaseUrl = String(rawBaseUrl)
+    .replace(/\/api\/?$/, '')
+    .replace(/\/$/, '');
+
+  if (!normalizedBaseUrl || /(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?$/i.test(normalizedBaseUrl)) {
+    throw new Error('PUBLIC_API_URL is required for email tracking. Configure a public backend URL before sending mail campaigns.');
+  }
+
+  return normalizedBaseUrl;
+};
+
+const getTrackingBaseUrl = (req) => buildPublicTrackingBaseUrl(req);
+
+const buildTrackingPixelUrl = (baseUrl, trackingId) => `${baseUrl}/api/mail-campaigns/open/${trackingId}`;
 
 const buildCampaignEmailHtml = ({ htmlBody, footer, logoHtml }) => `<div style="margin: 0; padding: 0; color: #1f2937; font-family: 'Times New Roman', Times, serif !important; font-size: 16px; line-height: 1.5;"><style>div, p, h1, h2, h3, span, li { font-family: 'Times New Roman', Times, serif !important; } p { margin: 0 0 16px; min-height: 1.5em; } img { width: auto; max-width: 100%; height: auto; }</style>${logoHtml}${htmlBody}${footer ? `<div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-family: 'Times New Roman', Times, serif !important;">${footer}</div>` : ''}</div>`;
 
-const addEmailTracking = (html, campaignId, trackingToken, baseUrl) => {
+const addEmailTracking = (html, campaignId, trackingId, baseUrl) => {
   const trackedHtml = String(html || '').replace(/href\s*=\s*(["'])(https?:\/\/[^"']+)\1/gi, (_match, quote, destination) => (
-    `href=${quote}${baseUrl}/api/mail-campaigns/tracking/click/${trackingToken}?url=${encodeURIComponent(destination)}${quote}`
+    `href=${quote}${baseUrl}/api/mail-campaigns/tracking/click/${trackingId}?url=${encodeURIComponent(destination)}${quote}`
   ));
-  return `${trackedHtml}<img src="${baseUrl}/api/mail-campaigns/tracking/open/${trackingToken}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px;" />`;
+  const trackingPixelUrl = buildTrackingPixelUrl(baseUrl, trackingId);
+  return `${trackedHtml}<img src="${trackingPixelUrl}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px;" />`;
+};
+
+const syncCampaignOpenCount = async (campaignId) => {
+  const openedRecipients = await EmailLog.distinct('recipientEmail', {
+    campaignId,
+    openedAt: { $ne: null },
+  });
+  await MailCampaign.updateOne({ campaignId }, { $set: { opens: openedRecipients.length } });
 };
 
 exports.trackOpen = async (req, res) => {
+  const trackingId = String(req.params.trackingId || req.params.token || '').trim();
+
   try {
-    const result = await EmailLog.updateOne(
-      { trackingToken: req.params.token, openedAt: null },
-      { $set: { openedAt: new Date() } }
-    );
-    if (result.modifiedCount) {
-      const log = await EmailLog.findOne({ trackingToken: req.params.token }).select('campaignId').lean();
-      if (log) await MailCampaign.updateOne({ campaignId: log.campaignId }, { $inc: { opens: 1 } });
+    const log = await EmailLog.findOne({
+      $or: [{ trackingId }, { trackingToken: trackingId }],
+    }).select('campaignId campaignName recipientEmail openedAt trackingId trackingToken').lean();
+
+    if (log) {
+      const wasAlreadyOpened = !!log.openedAt;
+      if (!wasAlreadyOpened) {
+        await EmailLog.updateOne(
+          {
+            $or: [{ trackingId }, { trackingToken: trackingId }],
+            openedAt: null,
+          },
+          {
+            $set: {
+              openedAt: new Date(),
+              trackingId: log.trackingId || trackingId,
+              trackingToken: log.trackingToken || trackingId,
+            },
+          }
+        );
+      }
+      await syncCampaignOpenCount(log.campaignId);
+      logger.info('EMAIL OPEN TRACKED', {
+        campaignId: log.campaignId,
+        campaignName: log.campaignName,
+        recipientEmail: log.recipientEmail,
+        trackingId,
+        uniqueOpen: !wasAlreadyOpened,
+      });
+    } else {
+      logger.info('mail-campaign.track-open.unknown-token', { trackingId });
     }
   } catch (error) {
-    logger.error('mail-campaign.track-open.failed', { message: error?.message, stack: error?.stack });
+    logger.error('mail-campaign.track-open.failed', { trackingId, message: error?.message, stack: error?.stack });
   }
+
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  });
   res.type('gif').send(Buffer.from('R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=', 'base64'));
 };
 
@@ -752,12 +822,46 @@ exports.sendCampaign = async (req, res) => {
       cid: 'synov-company-logo',
     }] : [];
 
-    const trackingTokens = new Map(normalizedRecipients.map((recipient) => [recipient, crypto.randomBytes(24).toString('hex')]));
+    const trackingIds = new Map(normalizedRecipients.map((recipient) => [recipient, crypto.randomBytes(24).toString('hex')]));
     const trackingBaseUrl = getTrackingBaseUrl(req);
+    const trackingUrlIsLocal = /(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?$/i.test(trackingBaseUrl);
+    logger.info('mail-campaign.tracking-config', {
+      campaignId: campaign.campaignId,
+      trackingBaseUrl,
+      trackingUrlIsLocal,
+      warning: trackingUrlIsLocal ? 'External recipients cannot reach a local tracking URL.' : '',
+    });
+    const emailLogs = normalizedRecipients.map((recipient) => {
+      const trackingId = trackingIds.get(recipient);
+      return {
+        campaignId: campaign.campaignId,
+        campaignName: campaign.campaignName,
+        recipientEmail: recipient,
+        status: 'Failed',
+        sentAt: new Date(),
+        errorMessage: '',
+        senderEmail: process.env.EMAIL_USER || process.env.SMTP_USER || '',
+        trackingId,
+        trackingToken: trackingId,
+      };
+    });
+
+    await EmailLog.insertMany(emailLogs);
 
     const report = await sendCampaignEmails({
       subject,
-      html: (recipient) => addEmailTracking(buildCampaignEmailHtml({ htmlBody: emailBody, footer: campaign.footer, logoHtml: '' }), campaign.campaignId, trackingTokens.get(recipient), trackingBaseUrl),
+      html: (recipient) => {
+        const trackingId = trackingIds.get(recipient);
+        const trackedHtml = addEmailTracking(buildCampaignEmailHtml({ htmlBody: emailBody, footer: campaign.footer, logoHtml: '' }), campaign.campaignId, trackingId, trackingBaseUrl);
+        logger.info('mail-campaign.tracking-pixel-injected', {
+          campaignId: campaign.campaignId,
+          recipientEmail: recipient,
+          trackingId,
+          trackingPixelUrl: buildTrackingPixelUrl(trackingBaseUrl, trackingId),
+          trackingPixelIncluded: trackedHtml.includes(buildTrackingPixelUrl(trackingBaseUrl, trackingId)),
+        });
+        return trackedHtml;
+      },
       text: campaign.footer || subject || 'Campaign email',
       to: normalizedRecipients,
       attachments: (campaign.attachments || []).map((attachmentPath) => ({
@@ -769,18 +873,18 @@ exports.sendCampaign = async (req, res) => {
     const sentCount = report.results.filter((item) => item.status === 'Sent').length;
     const failedCount = report.results.filter((item) => item.status === 'Failed').length;
 
-    const emailLogs = report.results.map((item) => ({
-      campaignId: campaign.campaignId,
-      campaignName: campaign.campaignName,
-      recipientEmail: item.recipientEmail,
-      status: item.status,
-      sentAt: new Date(),
-      errorMessage: item.errorMessage || '',
-      senderEmail: process.env.EMAIL_USER || process.env.SMTP_USER || '',
-      trackingToken: trackingTokens.get(item.recipientEmail) || '',
-    }));
-
-    await EmailLog.insertMany(emailLogs);
+    await Promise.all(report.results.map((item) => EmailLog.updateOne(
+      { $or: [{ trackingId: trackingIds.get(item.recipientEmail) }, { trackingToken: trackingIds.get(item.recipientEmail) }] },
+      {
+        $set: {
+          status: item.status,
+          sentAt: new Date(),
+          errorMessage: item.errorMessage || '',
+          trackingId: trackingIds.get(item.recipientEmail),
+          trackingToken: trackingIds.get(item.recipientEmail),
+        },
+      }
+    )));
 
     if (groupId && targetGroup) {
       targetGroup.recipientEmails = normalizedRecipients;

@@ -18,6 +18,8 @@ const {
 
 router.get('/recipient-counts', getRecipientCounts);
 router.get('/recipient-data', getRecipientData);
+router.get('/open/:trackingId', trackOpen);
+router.get('/tracking/open/:trackingId', trackOpen);
 router.get('/tracking/open/:token', trackOpen);
 router.get('/tracking/click/:token', trackClick);
 router.get('/:id/report', getCampaignReport);
