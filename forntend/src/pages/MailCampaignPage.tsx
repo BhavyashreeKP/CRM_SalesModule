@@ -1,13 +1,17 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Plus, Download, Search, Mail, FileText, Clock3, Send, Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { ArrowLeft, Plus, Download, Search, Mail, FileText, Clock3, Send, Trash2 } from 'lucide-react'
+import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material'
 import { StatCard } from '@/components/stat-card'
 import { deleteCampaign, getCampaigns, MailCampaignRecord } from '@/lib/mailCampaignApi'
 
-export default function MailCampaignPage() {
+type CampaignStatus = 'Draft' | 'Scheduled' | 'Sent'
+
+export default function MailCampaignPage({ statusFilter }: { statusFilter?: CampaignStatus }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [campaigns, setCampaigns] = useState<MailCampaignRecord[]>([])
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -15,11 +19,13 @@ export default function MailCampaignPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<MailCampaignRecord | null>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [stats, setStats] = useState({ total: 0, drafts: 0, scheduled: 0, sent: 0 })
 
   const loadCampaigns = async (nextPage = page, nextLimit = pageSize) => {
-    const data = await getCampaigns({ search, page: nextPage, limit: nextLimit })
+    const data = await getCampaigns({ search, page: nextPage, limit: nextLimit, ...(statusFilter ? { status: statusFilter } : {}) })
     setCampaigns(data.data || [])
     setTotalPages(data.pagination?.totalPages || 1)
     setTotalCount(data.pagination?.total || 0)
@@ -34,14 +40,24 @@ export default function MailCampaignPage() {
 
   useEffect(() => {
     void loadCampaigns(page, pageSize)
-  }, [page])
+  }, [page, statusFilter])
 
-  const stats = useMemo(() => ({
-    total: campaigns.length,
-    drafts: campaigns.filter((item) => item.status === 'Draft').length,
-    scheduled: campaigns.filter((item) => item.status === 'Scheduled').length,
-    sent: campaigns.filter((item) => item.status === 'Sent').length,
-  }), [campaigns])
+  useEffect(() => {
+    if (statusFilter) return
+    void Promise.all([
+      getCampaigns({ limit: 1 }),
+      getCampaigns({ limit: 1, status: 'Draft' }),
+      getCampaigns({ limit: 1, status: 'Scheduled' }),
+      getCampaigns({ limit: 1, status: 'Sent' }),
+    ]).then(([total, drafts, scheduled, sent]) => {
+      setStats({
+        total: total.pagination?.total || 0,
+        drafts: drafts.pagination?.total || 0,
+        scheduled: scheduled.pagination?.total || 0,
+        sent: sent.pagination?.total || 0,
+      })
+    }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Unable to load campaign counts.'))
+  }, [statusFilter])
 
   const tableCellClass = 'border border-[#E5E7EB] px-3 py-2.5 align-middle'
   const formatDate = (value?: string) => {
@@ -51,7 +67,6 @@ export default function MailCampaignPage() {
   }
 
   const handleDelete = async (campaign: MailCampaignRecord) => {
-    if (!window.confirm('Are you sure you want to delete this campaign?')) return
     setDeletingCampaignId(campaign.campaignId)
     setMessage('')
     setError('')
@@ -64,14 +79,18 @@ export default function MailCampaignPage() {
       setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete campaign.')
     } finally {
       setDeletingCampaignId(null)
+      setDeleteTarget(null)
     }
   }
 
   return (
     <div className="space-y-8">
+      {statusFilter === 'Draft' || statusFilter === 'Scheduled' ? (
+        <button type="button" onClick={() => navigate('/sales/mail-campaign')} className="inline-flex items-center gap-2 text-sm font-semibold text-[#2563EB]"><ArrowLeft className="h-4 w-4" /> Back to Mail Campaigns</button>
+      ) : null}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="mb-2 text-3xl font-serif font-bold text-gray-900">Mail Campaign Dashboard</h1>
+          <h1 className="mb-2 text-3xl font-serif font-bold text-gray-900">{statusFilter ? `${statusFilter} Campaigns` : 'Mail Campaign Dashboard'}</h1>
         </div>
         <div className="flex items-center gap-3">
           <button className="flex items-center gap-2 rounded-lg border border-[#EFECE5] bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm">
@@ -85,12 +104,14 @@ export default function MailCampaignPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Mail} label="Total Campaigns" value={stats.total} description="All active campaigns" iconBg="bg-[#F2EFE8]" iconColor="text-[#2563EB]" />
-        <StatCard icon={FileText} label="Draft Campaigns" value={stats.drafts} description="Saved for later review" iconBg="bg-[#F2EFE8]" iconColor="text-gray-700" />
-        <StatCard icon={Clock3} label="Scheduled Campaigns" value={stats.scheduled} description="Queued for sending" iconBg="bg-[#F2EFE8]" iconColor="text-amber-700" />
-        <StatCard icon={Send} label="Sent Campaigns" value={stats.sent} description="Completed campaigns" iconBg="bg-[#F2EFE8]" iconColor="text-green-700" />
-      </div>
+      {!statusFilter ? (
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+          <button type="button" onClick={() => navigate('/sales/mail-campaign')} className="text-left"><StatCard icon={Mail} label="Total Campaigns" value={stats.total} description="All active campaigns" iconBg="bg-[#F2EFE8]" iconColor="text-[#2563EB]" /></button>
+          <button type="button" onClick={() => navigate('/sales/mail-campaign/drafts')} className="text-left"><StatCard icon={FileText} label="Draft Campaigns" value={stats.drafts} description="Saved for later review" iconBg="bg-[#F2EFE8]" iconColor="text-gray-700" /></button>
+          <button type="button" onClick={() => navigate('/sales/mail-campaign/scheduled')} className="text-left"><StatCard icon={Clock3} label="Scheduled Campaigns" value={stats.scheduled} description="Queued for sending" iconBg="bg-[#F2EFE8]" iconColor="text-amber-700" /></button>
+          <button type="button" onClick={() => navigate('/sales/mail-campaign/sent')} className="text-left"><StatCard icon={Send} label="Sent Campaigns" value={stats.sent} description="Completed campaigns" iconBg="bg-[#F2EFE8]" iconColor="text-green-700" /></button>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-[#EFECE5] bg-white p-6 shadow-sm">
         <div className="mb-6">
@@ -114,8 +135,8 @@ export default function MailCampaignPage() {
               <tr className="bg-[#F2EFE8] text-left text-xs font-semibold uppercase tracking-wider text-gray-700">
                 <th className={`${tableCellClass} w-[7%] text-center`}>Sl No.</th>
                 <th className={`${tableCellClass} w-[12%]`}>Campaign ID</th>
-                <th className={`${tableCellClass} w-[20%]`}>Campaign Name</th>
-                <th className={`${tableCellClass} w-[25%]`}>Date</th>
+                <th className={`${tableCellClass} w-[30%]`}>Campaign Name</th>
+                <th className={`${tableCellClass} w-[15%]`}>Date</th>
                 <th className={`${tableCellClass} w-[9%] text-center`}>View Template</th>
                 <th className={`${tableCellClass} w-[9%] text-center`}>View Report</th>
                 <th className={`${tableCellClass} w-[7%] text-center`}>Opens (Total)</th>
@@ -129,9 +150,12 @@ export default function MailCampaignPage() {
                   <td className={`${tableCellClass} text-center font-medium text-gray-900`}>{(page - 1) * pageSize + index + 1}</td>
                   <td className={`${tableCellClass} font-medium text-gray-900`}>{campaign.campaignId}</td>
                   <td className={tableCellClass}>{campaign.campaignName}</td>
-                  <td className={`${tableCellClass} whitespace-nowrap`}>{formatDate(campaign.createdDate || campaign.createdAt)}</td>
+                  <td className={`${tableCellClass} whitespace-nowrap`}>{statusFilter === 'Scheduled' ? `${formatDate(campaign.scheduledDate)} ${campaign.scheduledTime || ''}` : formatDate(campaign.createdDate || campaign.createdAt)}</td>
                   <td className={`${tableCellClass} text-center`}>
-                    <button type="button" onClick={() => navigate(`/sales/mail-campaign/view/${campaign._id}`)} className="rounded bg-[#2563EB] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#1D4ED8]">View</button>
+                    <button type="button" onClick={() => {
+                      const target = campaign.status === 'Draft' || campaign.status === 'Scheduled' ? `/sales/mail-campaign/edit/${campaign._id}` : `/sales/mail-campaign/view/${campaign._id}`
+                      navigate(target, target.includes('/view/') ? { state: { from: location.pathname } } : undefined)
+                    }} className="rounded bg-[#2563EB] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#1D4ED8]">View</button>
                   </td>
                   <td className={`${tableCellClass} text-center`}>
                     <button type="button" onClick={() => navigate(`/sales/reports/mail-campaigns/${campaign._id}`)} className="rounded bg-[#2563EB] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#1D4ED8]">Report</button>
@@ -139,7 +163,7 @@ export default function MailCampaignPage() {
                   <td className={`${tableCellClass} text-center`}>{campaign.opens}</td>
                   <td className={`${tableCellClass} text-center`}>{campaign.clicks}</td>
                   <td className={`${tableCellClass} text-center`}>
-                    <button type="button" onClick={() => void handleDelete(campaign)} disabled={deletingCampaignId === campaign.campaignId} className="inline-flex items-center gap-1 rounded bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60" aria-label={`Delete ${campaign.campaignName}`}>
+                    <button type="button" onClick={() => setDeleteTarget(campaign)} disabled={deletingCampaignId === campaign.campaignId} className="inline-flex items-center gap-1 rounded bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60" aria-label={`Delete ${campaign.campaignName}`}>
                       <Trash2 className="h-3.5 w-3.5" />
                       {deletingCampaignId === campaign.campaignId ? 'Deleting...' : 'Delete'}
                     </button>
@@ -173,6 +197,17 @@ export default function MailCampaignPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} aria-labelledby="delete-campaign-dialog-title">
+        <DialogTitle id="delete-campaign-dialog-title">Are you sure to delete this?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{deleteTarget?.campaignName || 'The selected campaign'} will be permanently deleted.</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button color="error" onClick={() => deleteTarget && void handleDelete(deleteTarget)}>Delete</Button>
+        </DialogActions>
+      </Dialog>
     </div>
   )
 }

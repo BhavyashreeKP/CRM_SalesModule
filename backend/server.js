@@ -16,6 +16,7 @@ const locationRoutes = require('./routes/locationRoutes');
 const companyProfileRoutes = require('./routes/companyProfileRoutes');
 const opfRoutes = require('./routes/opfRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
+const { processScheduledCampaigns } = require('./controllers/mailCampaignController');
 
 const app = express();
 
@@ -55,7 +56,12 @@ mongoose
   .connect(MONGO_URI)
   .then(() => {
     console.log('MongoDB connected');
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      const serverUrl = `http://127.0.0.1:${PORT}`;
+      void processScheduledCampaigns(serverUrl);
+      setInterval(() => void processScheduledCampaigns(serverUrl), 60 * 1000);
+    });
   })
   .catch((err) => {
     console.error('MongoDB connection error:', err.message);

@@ -423,10 +423,6 @@ const buildPublicTrackingBaseUrl = (req) => {
     .replace(/\/api\/?$/, '')
     .replace(/\/$/, '');
 
-  if (!normalizedBaseUrl || /(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?$/i.test(normalizedBaseUrl)) {
-    throw new Error('PUBLIC_API_URL is required for email tracking. Configure a public backend URL before sending mail campaigns.');
-  }
-
   return normalizedBaseUrl;
 };
 
@@ -595,6 +591,7 @@ exports.createCampaign = async (req, res) => {
 
     const resolvedGroups = await resolveContactRecipients(finalGroups);
     const flattenedRecipientEmails = [...new Set(resolvedGroups.flatMap((group) => group.recipientEmails))];
+    const campaignStatus = req.body.status || 'Draft';
 
     if (!req.body.campaignName?.trim()) {
       return res.status(400).json({ success: false, message: 'Campaign name is required.' });
@@ -602,8 +599,11 @@ exports.createCampaign = async (req, res) => {
     if (!req.body.subject?.trim()) {
       return res.status(400).json({ success: false, message: 'Subject is required.' });
     }
-    if (!flattenedRecipientEmails.length) {
+    if (!flattenedRecipientEmails.length && campaignStatus !== 'Draft') {
       return res.status(400).json({ success: false, message: 'No Contacts with valid email addresses are available for this campaign.' });
+    }
+    if (campaignStatus === 'Scheduled' && (!req.body.scheduledDate || !req.body.scheduledTime)) {
+      return res.status(400).json({ success: false, message: 'Scheduled date and time are required.' });
     }
 
     const campaignId = await getNextCampaignId();
@@ -623,7 +623,7 @@ exports.createCampaign = async (req, res) => {
       footer: sanitize(req.body.footer || ''),
       image: req.files?.image?.[0]?.filename ? `/uploads/mail-campaigns/${req.files.image[0].filename}` : req.body.image || '',
       attachments: (req.files?.attachments || []).map((file) => `/uploads/mail-campaigns/${file.filename}`),
-      status: req.body.status || 'Draft',
+      status: campaignStatus,
       createdBy: req.body.createdBy || process.env.DEFAULT_CREATED_BY || 'Admin',
       createdDate: req.body.createdDate || new Date().toISOString().split('T')[0],
       scheduledDate: req.body.scheduledDate || '',
@@ -691,6 +691,7 @@ exports.updateCampaign = async (req, res) => {
 
     const resolvedGroups = await resolveContactRecipients(finalGroups);
     const flattenedRecipientEmails = [...new Set(resolvedGroups.flatMap((group) => group.recipientEmails))];
+    const campaignStatus = req.body.status || existing.status || 'Draft';
 
     const payload = {
       campaignName: req.body.campaignName || existing.campaignName || '',
@@ -709,7 +710,7 @@ exports.updateCampaign = async (req, res) => {
       attachments: (req.files?.attachments || []).length > 0
         ? (req.files?.attachments || []).map((file) => `/uploads/mail-campaigns/${file.filename}`)
         : (req.body.attachments ? parseArrayField(req.body.attachments) : existing.attachments || []),
-      status: req.body.status || existing.status || 'Draft',
+      status: campaignStatus,
       createdBy: req.body.createdBy || existing.createdBy || process.env.DEFAULT_CREATED_BY || 'Admin',
       createdDate: req.body.createdDate || existing.createdDate || new Date().toISOString().split('T')[0],
       scheduledDate: req.body.scheduledDate || existing.scheduledDate || '',
@@ -720,8 +721,11 @@ exports.updateCampaign = async (req, res) => {
       campaignGroups: resolvedGroups,
     };
 
-    if (!payload.campaignName || !resolvedGroups.length || !flattenedRecipientEmails.length) {
+    if (!payload.campaignName || !resolvedGroups.length || (campaignStatus !== 'Draft' && !flattenedRecipientEmails.length)) {
       return res.status(400).json({ success: false, message: 'Please select at least one contact with a valid email address.' });
+    }
+    if (campaignStatus === 'Scheduled' && (!payload.scheduledDate || !payload.scheduledTime)) {
+      return res.status(400).json({ success: false, message: 'Scheduled date and time are required.' });
     }
 
     const campaign = await MailCampaign.findByIdAndUpdate(req.params.id, payload, { new: true, runValidators: true });
@@ -953,5 +957,53 @@ exports.sendCampaign = async (req, res) => {
     }
     logger.error('mail-campaign.send.failed', { message: error?.message, stack: error?.stack });
     res.status(500).json({ success: false, message: 'Unable to complete email delivery due to an unexpected server error.' });
+  }
+};
+
+let scheduledCampaignCheckRunning = false;
+
+exports.processScheduledCampaigns = async (baseUrl) => {
+  if (scheduledCampaignCheckRunning) return;
+  scheduledCampaignCheckRunning = true;
+
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const candidates = await MailCampaign.find({
+      status: 'Scheduled',
+      scheduledDate: { $ne: '', $lte: today },
+    }).select('_id scheduledDate scheduledTime').lean();
+
+    for (const candidate of candidates) {
+      const scheduledAt = new Date(`${candidate.scheduledDate}T${candidate.scheduledTime || '00:00'}:00`);
+      if (Number.isNaN(scheduledAt.getTime()) || scheduledAt > new Date()) continue;
+
+      const claimed = await MailCampaign.findOneAndUpdate(
+        { _id: candidate._id, status: 'Scheduled' },
+        { $set: { status: 'Sending' } },
+        { new: true },
+      ).select('_id');
+      if (!claimed) continue;
+
+      try {
+        const response = await fetch(`${baseUrl}/api/mail-campaigns/${candidate._id}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        if (!response.ok && response.status >= 500) {
+          const current = await MailCampaign.findById(candidate._id).select('status').lean();
+          if (current?.status === 'Sending') {
+            await MailCampaign.updateOne({ _id: candidate._id, status: 'Sending' }, { $set: { status: 'Scheduled' } });
+          }
+        }
+      } catch (error) {
+        logger.error('mail-campaign.scheduler.send.failed', { campaignId: candidate._id.toString(), message: error?.message, stack: error?.stack });
+        await MailCampaign.updateOne({ _id: candidate._id, status: 'Sending' }, { $set: { status: 'Scheduled' } });
+      }
+    }
+  } catch (error) {
+    logger.error('mail-campaign.scheduler.failed', { message: error?.message, stack: error?.stack });
+  } finally {
+    scheduledCampaignCheckRunning = false;
   }
 };

@@ -20,6 +20,8 @@ export default function MailCampaignFormPage() {
   const [companyProfile, setCompanyProfile] = useState<CompanyProfileRecord | null>(null)
   const [image, setImage] = useState<File | null>(null)
   const [imagePreviewUrl, setImagePreviewUrl] = useState('')
+  const [scheduledDate, setScheduledDate] = useState('')
+  const [scheduledTime, setScheduledTime] = useState('')
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [error, setError] = useState('')
@@ -52,6 +54,8 @@ export default function MailCampaignFormPage() {
       setImageAlignment(campaign.imageAlignment || alignmentOptions[0])
       setCampaignBody(campaign.campaignBody || '')
       setFooter(campaign.footer || '')
+      setScheduledDate(campaign.scheduledDate || '')
+      setScheduledTime(campaign.scheduledTime || '')
     }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Unable to load campaign.'))
   }, [id])
 
@@ -61,7 +65,7 @@ export default function MailCampaignFormPage() {
     setImagePreviewUrl(URL.createObjectURL(file))
   }
 
-  const saveCampaign = async (event: React.FormEvent) => {
+  const saveCampaign = async (event: React.FormEvent, action: 'Draft' | 'Scheduled' | 'Sent') => {
     event.preventDefault()
     if (!campaignName.trim()) {
       setError('Campaign name is required.')
@@ -69,6 +73,10 @@ export default function MailCampaignFormPage() {
     }
     if (!subject.trim()) {
       setError('Subject is required.')
+      return
+    }
+    if (action === 'Scheduled' && (!scheduledDate || !scheduledTime)) {
+      setError('Scheduled date and time are required.')
       return
     }
     setIsSaving(true)
@@ -80,16 +88,18 @@ export default function MailCampaignFormPage() {
     formData.append('imageAlignment', imageAlignment)
     formData.append('campaignBody', campaignBody)
     formData.append('footer', footer)
-    formData.append('status', 'Draft')
+    formData.append('status', action)
     formData.append('createdBy', typeof window !== 'undefined' ? (window.localStorage.getItem('userName') || window.localStorage.getItem('name') || 'Admin') : 'Admin')
     formData.append('createdDate', new Date().toISOString().split('T')[0])
+    formData.append('scheduledDate', action === 'Scheduled' ? scheduledDate : '')
+    formData.append('scheduledTime', action === 'Scheduled' ? scheduledTime : '')
     if (image) formData.append('image', image)
 
     try {
       const savedCampaign = id ? await updateCampaign(id, formData) : await createCampaign(formData)
       const savedId = id || savedCampaign.data?._id
-      if (!savedId) throw new Error('Campaign was saved without an ID and could not be sent.')
-      await sendCampaign(savedId)
+      if (!savedId) throw new Error('Campaign was saved without an ID.')
+      if (action === 'Sent') await sendCampaign(savedId)
       navigate('/sales/mail-campaign')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save campaign.')
@@ -115,7 +125,7 @@ export default function MailCampaignFormPage() {
       <div className="rounded-xl border border-[#EFECE5] bg-white p-8 shadow-sm">
         <h1 className="mb-8 text-3xl font-serif font-bold text-gray-900">{id ? 'Edit Campaign' : 'Create Campaign'}</h1>
         {error ? <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-        <form onSubmit={saveCampaign} className="space-y-8">
+        <form onSubmit={(event) => void saveCampaign(event, 'Sent')} className="space-y-8">
           <div className="grid gap-6 md:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-gray-700">Campaign Name</span>
@@ -153,9 +163,22 @@ export default function MailCampaignFormPage() {
             <TiptapEditor value={footer} onChange={setFooter} placeholder="Write your campaign footer" />
           </div>
 
+          <div className="grid gap-6 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-gray-700">Scheduled Date</span>
+              <input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#CEC9BD]" />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-gray-700">Scheduled Time</span>
+              <input type="time" value={scheduledTime} onChange={(event) => setScheduledTime(event.target.value)} className="w-full rounded-lg border border-[#EFECE5] bg-[#FAF8F2] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#CEC9BD]" />
+            </label>
+          </div>
+
           <div className="flex justify-end gap-3 border-t border-[#EFECE5] pt-6">
             <button type="button" onClick={() => setIsPreviewOpen(true)} className="rounded-lg border border-[#2563EB] bg-white px-6 py-3 text-sm font-semibold text-[#2563EB]">Preview</button>
-            <button type="submit" disabled={isSaving} className="rounded-lg bg-[#2563EB] px-6 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Submitting...' : 'Submit'}</button>
+            <button type="button" onClick={(event) => void saveCampaign(event, 'Draft')} disabled={isSaving} className="rounded-lg border border-[#2563EB] bg-white px-6 py-3 text-sm font-semibold text-[#2563EB] disabled:opacity-60">Save Draft</button>
+            <button type="button" onClick={(event) => void saveCampaign(event, 'Scheduled')} disabled={isSaving} className="rounded-lg border border-amber-600 bg-white px-6 py-3 text-sm font-semibold text-amber-700 disabled:opacity-60">Schedule</button>
+            <button type="submit" disabled={isSaving} className="rounded-lg bg-[#2563EB] px-6 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Submitting...' : 'Send'}</button>
           </div>
         </form>
       </div>

@@ -9,11 +9,9 @@ import {
   CalendarRange,
   Download,
   FileText,
-  HandCoins,
   RefreshCcw,
   Target,
   TrendingUp,
-  UserRound,
   Users,
 } from 'lucide-react'
 import { fetchActivities, type ActivityRecord } from '@/lib/activityApi'
@@ -188,7 +186,6 @@ export default function DashboardPage() {
   const dataset = useMemo(() => {
     const activeCustomers = customers.filter((customer) => customer.status === 'Active').length
     const quotations = leads.filter((lead) => lead.leadStatus === 'Proposal Sent' || Boolean(lead.quotationId)).length
-    const opfCount = opfs.length
     const orderCloser = leads.filter((lead) => lead.leadStatus === 'Won' || lead.isConverted).length
 
     const currentMonthLeads = leads.filter((lead) => getMonthKeyFromDateValue(lead.createdDate) === selectedMonth)
@@ -229,19 +226,8 @@ export default function DashboardPage() {
         description: 'New quotations raised',
       },
       {
-        key: 'opf',
-        label: 'OPF',
-        value: opfCount,
-        currentValue: currentMonthOpfs.length,
-        previousValue: previousMonthOpfs.length,
-        icon: HandCoins,
-        iconBg: 'bg-violet-100',
-        iconColor: 'text-violet-700',
-        description: 'Order processing formats',
-      },
-      {
         key: 'orderCloser',
-        label: 'ORDER CLOSER',
+        label: 'CLOSED ORDERS',
         value: orderCloser,
         currentValue: currentMonthLeads.filter((lead) => lead.leadStatus === 'Won' || lead.isConverted).length,
         previousValue: previousMonthLeads.filter((lead) => lead.leadStatus === 'Won' || lead.isConverted).length,
@@ -319,7 +305,6 @@ export default function DashboardPage() {
     return {
       activeCustomers,
       quotations,
-      opfCount,
       orderCloser,
       metrics,
       totalPipelineValue,
@@ -455,7 +440,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {kpiCards.map((card) => {
                 const Icon = card.icon
                 const isPositive = card.diff >= 0
@@ -627,7 +612,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid min-h-0 grid-cols-1 gap-3 xl:grid-cols-4">
+            <div className="grid min-h-0 grid-cols-1 gap-3 xl:grid-cols-2">
               <div className="rounded-xl border border-[#EFECE5] bg-white p-3 shadow-sm">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <h3 className="text-base font-serif font-bold text-gray-900">Top Sources</h3>
@@ -673,63 +658,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-[#EFECE5] bg-white p-3 shadow-sm xl:col-span-1">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="text-base font-serif font-bold text-gray-900">Recent Activities</h3>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/sales/activities')}
-                    className="text-[10px] font-medium text-blue-600 hover:underline"
-                  >
-                    View All
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {activities.slice(0, 3).map((activity) => {
-                    const typeKey = String(activity.activityType || '').toLowerCase()
-                    const tone = typeKey.includes('call') ? 'call' : typeKey.includes('meeting') ? 'meeting' : typeKey.includes('follow') || typeKey.includes('follow-up') ? 'followup' : typeKey.includes('quotation') ? 'quotation' : 'default'
-                    const iconLabel = `${activity.activityType || 'Activity'}`.slice(0, 1).toUpperCase()
-                    return (
-                      <div key={activity._id} className="flex items-start gap-2 rounded-lg border border-[#EFECE5] bg-slate-50 p-2">
-                        <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-semibold ${activityTone[tone]}`}>
-                          {iconLabel}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-[11px] font-semibold text-gray-900">{activity.activityType || 'Activity'}</p>
-                            <span className="text-[9px] uppercase tracking-[0.12em] text-gray-500">{activity.status || 'Open'}</span>
-                          </div>
-                          <p className="mt-1 text-[10px] text-gray-600">{activity.customerName || activity.company || 'Customer'} • {activity.contactPerson || 'Contact'}</p>
-                          <p className="mt-1 text-[9px] text-gray-500">{activity.activityDate || activity.followUpDate || 'No date'} • {activity.location || 'No location'}</p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-[#EFECE5] bg-white p-3 shadow-sm">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="text-base font-serif font-bold text-gray-900">Top Sales Reps</h3>
-                  <UserRound className="h-4 w-4 text-gray-500" />
-                </div>
-
-                <div className="space-y-2">
-                  {dataset.topReps.map((rep) => (
-                    <div key={rep.rep} className="flex items-center justify-between gap-2 rounded-lg border border-[#EFECE5] bg-slate-50 p-2">
-                      <div>
-                        <p className="text-xs font-semibold text-gray-900">{rep.rep}</p>
-                        <p className="text-[10px] text-gray-500">{rep.deals} deals</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs font-semibold text-gray-900">{formatCompactCurrency(rep.revenue)}</p>
-                        <p className="text-[10px] text-gray-500">Revenue</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           </>
         )}

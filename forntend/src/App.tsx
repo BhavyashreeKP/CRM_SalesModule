@@ -203,6 +203,9 @@ export default function App() {
             </SalesLayout>
           }
         />
+        <Route path="/sales/mail-campaign/drafts" element={<SalesLayout><MailCampaignPage statusFilter="Draft" /></SalesLayout>} />
+        <Route path="/sales/mail-campaign/scheduled" element={<SalesLayout><MailCampaignPage statusFilter="Scheduled" /></SalesLayout>} />
+        <Route path="/sales/mail-campaign/sent" element={<SalesLayout><MailCampaignPage statusFilter="Sent" /></SalesLayout>} />
         <Route
           path="/sales/mail-campaign/edit/:id"
           element={

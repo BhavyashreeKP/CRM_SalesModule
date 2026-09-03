@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Plus, Pencil, Trash2, MessageCircle } from 'lucide-react'
 import { Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Button, Tooltip } from '@mui/material'
@@ -11,57 +11,49 @@ const tableCellClass = 'px-6 py-3 border-r border-[#D1D5DB]'
 
 export default function ContactsPage() {
   const navigate = useNavigate()
-  const [contacts, setContacts] = useState<ContactRecord[]>([])
+  const [allContacts, setAllContacts] = useState<ContactRecord[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
-  const contactCacheRef = useRef<Map<string, { data: ContactRecord[]; totalPages: number; totalCount: number }>>(new Map())
 
-  const loadContacts = useCallback(async (query = searchQuery, nextPage = page, nextPageSize = pageSize) => {
-    const cacheKey = JSON.stringify({ query: query.trim(), page: nextPage, limit: nextPageSize })
-    const cachedResponse = contactCacheRef.current.get(cacheKey)
-
-    if (cachedResponse) {
-      setContacts(cachedResponse.data)
-      setTotalPages(cachedResponse.totalPages)
-      setTotalCount(cachedResponse.totalCount)
-      return
-    }
-
+  const loadContacts = useCallback(async () => {
     setIsLoading(true)
     try {
-      const response = await fetchContacts({ search: query, page: nextPage, limit: nextPageSize })
-      const nextContacts = response.data || []
-      const nextPagination = {
-        totalPages: response.pagination?.totalPages || 1,
-        totalCount: response.pagination?.total || 0,
-      }
-
-      contactCacheRef.current.set(cacheKey, {
-        data: nextContacts,
-        totalPages: nextPagination.totalPages,
-        totalCount: nextPagination.totalCount,
-      })
-
-      setContacts(nextContacts)
-      setTotalPages(nextPagination.totalPages)
-      setTotalCount(nextPagination.totalCount)
+      const response = await fetchContacts({ page: 1, limit: 1000 })
+      setAllContacts(response.data || [])
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize, searchQuery])
+  }, [])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadContacts(searchQuery, page, pageSize)
-    }, 500)
-    return () => window.clearTimeout(timer)
-  }, [searchQuery, page, pageSize, loadContacts])
+    void loadContacts()
+  }, [loadContacts])
+
+  const filteredContacts = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase()
+    if (!normalizedQuery) return allContacts
+    return allContacts.filter((contact) => [
+      contact.contactName,
+      contact.designation,
+      contact.contactNumber,
+      contact.email,
+    ].some((value) => String(value ?? '').toLowerCase().startsWith(normalizedQuery)))
+  }, [allContacts, searchQuery])
+
+  const totalCount = filteredContacts.length
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+  const contacts = useMemo(() => {
+    const startIndex = (page - 1) * pageSize
+    return filteredContacts.slice(startIndex, startIndex + pageSize)
+  }, [filteredContacts, page, pageSize])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   const summaryText = useMemo(() => {
     if (totalCount === 0) return 'Showing 0 to 0 of 0 entries'
@@ -73,7 +65,7 @@ export default function ContactsPage() {
 
     try {
       await deleteContact(id)
-      await loadContacts(searchQuery)
+      await loadContacts()
       setFeedbackMessage('Contact deleted successfully.')
     } catch (error) {
       console.error(error)
@@ -82,7 +74,7 @@ export default function ContactsPage() {
     } finally {
       setDeleteTargetId(null)
     }
-  }, [loadContacts, searchQuery])
+  }, [loadContacts])
 
   return (
     <div className="space-y-6">
@@ -100,8 +92,11 @@ export default function ContactsPage() {
             <input
               type="text"
               value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search by name, email, or phone"
+              onChange={(event) => {
+                setSearchQuery(event.target.value)
+                setPage(1)
+              }}
+              placeholder="Search contacts"
               className="w-full rounded-lg border border-[#EFECE5] bg-white py-2.5 pl-9 pr-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#CEC9BD]"
             />
           </div>
@@ -162,7 +157,10 @@ export default function ContactsPage() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#EFECE5] pt-4">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <span>Show</span>
-            <select className="rounded border border-[#EFECE5] bg-white px-2 py-1.5 text-sm text-gray-700" value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            <select className="rounded border border-[#EFECE5] bg-white px-2 py-1.5 text-sm text-gray-700" value={pageSize} onChange={(event) => {
+              setPageSize(Number(event.target.value))
+              setPage(1)
+            }}>
               <option value={10}>10</option>
               <option value={25}>25</option>
               <option value={50}>50</option>
